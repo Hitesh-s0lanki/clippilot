@@ -264,11 +264,107 @@ jobs:
           fi
           docker run --rm -e DATABASE_URL "$IMAGE" alembic upgrade head
 
+  configure:
+    name: Sync configuration to Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, verify]
+    steps:
+      - name: Push environment variables
+        # Render reads its configuration from its own store, not from the
+        # image - nothing this pipeline builds can carry a database URL into
+        # the container. This step is the only channel there is: it writes the
+        # repository's secrets and variables to the service through Render's
+        # API, so GitHub stays the one place configuration is edited.
+        #
+        # Per-key PUT, deliberately. Render also has a bulk endpoint that
+        # replaces the service's entire environment, which would silently
+        # delete anything set in the dashboard and not mirrored here.
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          IP_HASH_SALT: ${{ secrets.IP_HASH_SALT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          CLERK_JWKS_URL: ${{ vars.CLERK_JWKS_URL }}
+          CLERK_ISSUER: ${{ vars.CLERK_ISSUER }}
+          CLERK_AUDIENCE: ${{ vars.CLERK_AUDIENCE }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_REGION: ${{ vars.S3_REGION }}
+          S3_KEY_PREFIX: ${{ vars.S3_KEY_PREFIX }}
+          S3_PUBLIC_BASE_URL: ${{ vars.S3_PUBLIC_BASE_URL }}
+          AGENT_PROVIDER: ${{ vars.AGENT_PROVIDER }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          FIRECRAWL_MCP_URL: ${{ vars.FIRECRAWL_MCP_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_SERVICE_ID" ]; then
+            {
+              echo '### Render configuration'
+              echo
+              echo 'Skipped. Set the `RENDER_API_KEY` secret and the'
+              echo '`RENDER_SERVICE_ID` variable to have this pipeline own the'
+              echo "service's environment. Until then it has to be edited in the"
+              echo 'Render dashboard, and a deploy will fail preflight without it.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo 'RENDER_API_KEY or RENDER_SERVICE_ID is absent; leaving the service configuration alone.'
+            exit 0
+          fi
+
+          # ENVIRONMENT, DEBUG and ALLOW_DEV_AUTH_HEADER are absent on purpose.
+          # The image already pins them to their production values, and a copy
+          # in Render would be a second place for them to drift.
+          MANAGED='DATABASE_URL IP_HASH_SALT ANTHROPIC_API_KEY OPENAI_API_KEY
+                   FIRECRAWL_API_KEY AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+                   CLERK_JWKS_URL CLERK_ISSUER CLERK_AUDIENCE CORS_ORIGINS
+                   S3_BUCKET S3_REGION S3_KEY_PREFIX S3_PUBLIC_BASE_URL
+                   AGENT_PROVIDER AGENT_MODEL FIRECRAWL_MCP_URL'
+
+          set_count=0
+          skipped=''
+          for name in $MANAGED; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              skipped="$skipped $name"
+              continue
+            fi
+            curl -fsS -X PUT \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              -H 'Content-Type: application/json' \
+              --data "$(jq -nc --arg v "$value" '{value: $v}')" \
+              "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/env-vars/${name}" \
+              > /dev/null
+            echo "  set $name"
+            set_count=$((set_count + 1))
+          done
+
+          {
+            echo '### Render configuration'
+            echo
+            echo "Wrote **${set_count}** variables to \`${RENDER_SERVICE_ID}\`."
+            [ -n "$skipped" ] && echo "Not set (empty in GitHub):\`${skipped}\`"
+            case "$CORS_ORIGINS" in
+              *localhost*) echo
+                           echo '> `CORS_ORIGINS` contains localhost. A deployed browser'
+                           echo '> client will be blocked by CORS until it names the real origin.' ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [build, verify]
+    # configure comes first so the service already holds the right
+    # configuration when the new image starts. It never fails when the API key
+    # is absent, so this ordering costs nothing when the pipeline does not own
+    # the service's environment.
+    needs: [build, verify, configure]
     if: github.ref_name == 'main' || github.ref_name == 'release'
     steps:
       - name: Trigger the deploy hook
