@@ -15,12 +15,7 @@ import { LandingSection } from "./landing-section";
  */
 export function LandingFaq() {
   return (
-    <LandingSection
-      id="faq"
-      eyebrow="Questions"
-      title="The things worth asking first."
-      description="Answered the way the product actually behaves, including where it stops."
-    >
+    <LandingSection id="faq" eyebrow="Questions" title="The things worth asking first.">
       <Accordion
         type="single"
         collapsible

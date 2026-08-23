@@ -15,10 +15,10 @@ import { siteConfig } from "@/config/site";
  */
 export function PublicFooterBrand() {
   return (
-    <div className="max-w-sm">
+    <div className="col-span-2 max-w-sm lg:col-span-1">
       <Link
         href="/"
-        className="inline-flex items-center gap-2 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="inline-flex min-h-11 items-center gap-2 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none sm:min-h-0"
       >
         <AppLogo size={28} />
         <span className="font-heading font-semibold tracking-tight">{siteConfig.name}</span>

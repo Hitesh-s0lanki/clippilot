@@ -1,9 +1,9 @@
 /**
  * The landing page's in-page anchors, in the order the sections appear.
  *
- * One list, two consumers - the header's marketing nav and the footer's
- * "Product" column - so a section can never be renamed in one and not the
- * other, and every link is an anchor that cannot 404.
+ * The header does not carry them - it stops at the mark, the ads library, the
+ * dashboard and the account menu - so the footer is where a reader jumps back
+ * into a section. Anchors, so none of them can 404.
  */
 const sectionNav = [
   { label: "How it works", href: "/#how-it-works" },
@@ -24,8 +24,9 @@ export const siteConfig = {
    *
    * One source of truth for three surfaces - the landing page, the account
    * screens and the footer - so none of them can describe the product
-   * differently. `surface` says who is looking at that step, which is the part
-   * a marketing reader needs and the account panel ignores.
+   * differently. One line each: the four steps are a wayfinding device, not a
+   * place to argue the product. `surface` says who is looking at that step,
+   * which is the part a marketing reader needs and the account panel ignores.
    */
   flow: [
     {
@@ -34,7 +35,6 @@ export const siteConfig = {
       surface: "Console",
       title: "Dashboard",
       description: "Every campaign with its status, schedule, views and interactions.",
-      detail: "Filter by status, search by name, and see the live counters without opening a row.",
     },
     {
       id: "builder",
@@ -42,7 +42,6 @@ export const siteConfig = {
       surface: "Console",
       title: "Builder",
       description: "Configure the video, the personalised message and two response options.",
-      detail: "Schedule, budget, delivery caps, compliance and tracking sit in the same form.",
     },
     {
       id: "preview",
@@ -50,7 +49,6 @@ export const siteConfig = {
       surface: "Customer",
       title: "Preview",
       description: "The customer view, with {{customer_name}} already resolved.",
-      detail: "The exact page the recipient opens - watch it, answer it, and get the follow-up.",
     },
     {
       id: "analytics",
@@ -58,22 +56,21 @@ export const siteConfig = {
       surface: "Console",
       title: "Analytics",
       description: "Views, interactions and the split between the two options.",
-      detail: "Every VIEW and RESPONSE is an event, so the split is counted rather than estimated.",
     },
   ],
-  sectionNav,
   /**
    * The public footer's link columns.
    *
    * Every href resolves: in-page anchors on the landing page, or real routes.
-   * `/dashboard` and `/campaigns/new` are behind the session guard, so a
-   * signed-out visitor is sent to sign-in rather than to a dead end.
+   * `/ads` is public; `/dashboard` and `/campaigns/new` are behind the session
+   * guard, so a signed-out visitor is sent to sign-in rather than a dead end.
    */
   footerNav: [
     { title: "Product", links: sectionNav },
     {
-      title: "Console",
+      title: "Explore",
       links: [
+        { label: "Ads library", href: "/ads" },
         { label: "Campaign dashboard", href: "/dashboard" },
         { label: "New campaign", href: "/campaigns/new" },
       ],

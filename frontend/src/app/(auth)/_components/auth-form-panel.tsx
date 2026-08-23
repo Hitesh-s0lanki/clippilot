@@ -11,23 +11,23 @@ export interface AuthFormPanelProps {
 }
 
 /**
- * The narrow half of the account screens - the fourth column of the split.
+ * The right half of the account screens.
  *
  * It frames Clerk's card with the two controls the missing site header would
  * otherwise have provided: a way back to the landing page, and the theme
  * toggle. Without them the account screens would be the only place in the app
  * where a visitor can neither leave nor switch to dark mode.
  *
- * The mark repeats here only below `xl`, where the brand panel is hidden and
+ * The mark repeats here only below `lg`, where the brand panel is hidden and
  * nothing else identifies the product.
  */
 export function AuthFormPanel({ children }: AuthFormPanelProps) {
   return (
-    <main className="flex min-w-0 flex-col px-5 py-6 sm:px-8">
+    <main className="flex min-w-0 flex-col overflow-y-auto px-5 py-6 sm:px-8">
       <div className="flex items-center gap-3">
         <Link
           href="/"
-          className="flex items-center gap-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 xl:hidden"
+          className="flex items-center gap-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 lg:hidden"
         >
           <AppLogo size={28} />
           <span className="font-heading font-semibold tracking-tight">{siteConfig.name}</span>
@@ -46,7 +46,7 @@ export function AuthFormPanel({ children }: AuthFormPanelProps) {
       */}
       <div
         data-auth-form=""
-        className="mx-auto flex w-full max-w-100 flex-1 flex-col justify-center py-10 sm:py-12"
+        className="mx-auto my-auto flex w-full max-w-100 flex-col py-10 sm:py-12"
       >
         {children}
       </div>

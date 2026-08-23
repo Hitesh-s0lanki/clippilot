@@ -34,7 +34,7 @@ export function LandingSection({
     <section
       id={id}
       aria-labelledby={headingId}
-      className={cn("scroll-mt-20 border-t border-border pt-14 sm:pt-20", className)}
+      className={cn("scroll-mt-24 border-t border-border pt-12 sm:pt-20", className)}
     >
       <p className="text-sm font-medium text-primary">{eyebrow}</p>
       <h2

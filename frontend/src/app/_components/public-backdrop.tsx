@@ -1,13 +1,15 @@
 /**
- * The wash of colour behind the hero.
+ * The wash of colour behind a public page's opening screen.
  *
  * Three stacked layers - a diagonal tint and two blurred brand-hue orbs -
  * rather than an image, so it costs nothing to load and follows the palette
  * into dark mode instead of staying a fixed light-mode picture. The same
  * technique as the account screens' backdrop, tuned for a full-width band.
+ * Shared by the landing hero and the 404, which is why it sits at the segment
+ * they have in common rather than inside `(public)`.
  * Purely decorative, so it is hidden from assistive technology.
  */
-export function LandingBackdrop() {
+export function PublicBackdrop() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-chart-2/10" />

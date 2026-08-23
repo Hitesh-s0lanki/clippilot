@@ -17,7 +17,7 @@ export function LandingFeatures() {
       id="features"
       eyebrow="What you configure"
       title="Everything a real campaign needs, in one form."
-      description="The builder is not a five-field toy. It carries the fields a regulated campaign is actually reviewed against - and refuses to publish until they hold together."
+      description="The fields a regulated campaign is reviewed against - and it will not publish until they hold together."
     >
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {marketing.features.map((feature) => (
@@ -25,6 +25,7 @@ export function LandingFeatures() {
             key={feature.id}
             title={feature.title}
             description={feature.description}
+            facts={feature.facts}
             Icon={feature.Icon}
             wide={feature.wide}
           />

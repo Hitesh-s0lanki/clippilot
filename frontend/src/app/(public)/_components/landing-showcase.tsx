@@ -15,7 +15,6 @@ export function LandingShowcase() {
       id="personalisation"
       eyebrow="Personalisation and analytics"
       title="Written once. Answered once. Counted once."
-      description="The message is addressed to a person, the reply is stored against that person, and the numbers on the analytics screen are the same events, added up."
     >
       <div className="grid gap-4 lg:grid-cols-2">
         <LandingResolutionCard />
