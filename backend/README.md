@@ -508,6 +508,7 @@ artefact.
 | `build` | Builds and pushes to `ghcr.io/<owner>/clippilot-backend`, tagged `sha-<commit>`, the branch name, plus `latest` on `main` and `prod` on `release`. Outputs a digest-pinned reference |
 | `verify` | Pulls that digest, boots it against a throwaway PostgreSQL with `ENVIRONMENT=production`, and asserts `/healthz` is `ok`, `/openapi.json` serves, migrations ran, and the process is not root |
 | `migrate` | Manual dispatch only. Runs `alembic upgrade head` against the `DATABASE_URL` secret, using the image just built |
+| `configure` | Writes the secrets and variables below to the Render service through its API, so the container has its configuration before the new image starts |
 | `deploy` | Posts the verified digest to `RENDER_DEPLOY_HOOK_URL`. Skipped with a note in the run summary when that secret is absent |
 
 `verify` deliberately runs with `ENVIRONMENT=production` so
@@ -536,6 +537,7 @@ each is filled in.
 | `FIRECRAWL_API_KEY` | Agent web research. Absent means `researched=false`, not a failure |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 uploads. Omit both when the deployment uses an instance role |
 | `RENDER_DEPLOY_HOOK_URL` | The `deploy` job. Not in `.env` - copy it from the Render service |
+| `RENDER_API_KEY` | The `configure` job. An account API key from Render → Account Settings → API Keys |
 
 | Variable | Needed for |
 | --- | --- |
@@ -544,6 +546,27 @@ each is filled in.
 | `S3_BUCKET`, `S3_REGION`, `S3_KEY_PREFIX`, `S3_PUBLIC_BASE_URL` | Video uploads |
 | `AGENT_PROVIDER`, `AGENT_MODEL` | Pinning a provider or model |
 | `FIRECRAWL_MCP_URL` | The MCP endpoint |
+| `RENDER_SERVICE_ID` | The `srv-…` id of the service `configure` writes to. It is the path segment in the deploy hook URL |
+
+### How configuration reaches the container
+
+Nothing this pipeline builds can carry it. The image holds no configuration by
+design, so the running container reads its environment from Render's own store
+- which is why a green pipeline and a crashlooping service are perfectly
+consistent with each other, and why rebuilding never fixes a missing variable.
+
+The `configure` job is the only channel between the two. Given a
+`RENDER_API_KEY` it writes each managed variable to the service, one key at a
+time. Per-key on purpose: Render's bulk endpoint replaces the service's entire
+environment, which would silently delete anything set in the dashboard and not
+mirrored in GitHub.
+
+Without that key the job is a no-op that says so in the run summary, and the
+service's environment has to be maintained by hand in the dashboard.
+
+`ENVIRONMENT`, `DEBUG` and `ALLOW_DEV_AUTH_HEADER` are deliberately not synced.
+The image already pins them to their production values, and a copy in Render
+would be a second place for them to drift.
 
 [`scripts/sync-github-secrets.sh`](scripts/sync-github-secrets.sh) pushes them
 from `.env` in one go. It never prints a value, skips anything empty, and
