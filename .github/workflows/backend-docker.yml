@@ -1,0 +1,296 @@
+name: Backend Docker
+
+# Builds backend/Dockerfile, publishes it to GHCR, boots the published image
+# against a throwaway PostgreSQL to prove it actually starts, and then hands
+# the digest to the deploy hook.
+#
+# Correctness of the code is backend-ci.yml's job; this workflow's job is the
+# artefact. It runs on the branches that produce a deployable image, not on
+# pull requests, so a fork cannot push to the registry.
+on:
+  push:
+    branches: [main, release]
+    paths:
+      - 'backend/**'
+      - '!backend/**.md'
+      - '.github/workflows/backend-docker.yml'
+  workflow_dispatch:
+    inputs:
+      migrate:
+        description: 'Also run `alembic upgrade head` against the DATABASE_URL secret'
+        type: boolean
+        default: false
+
+# Deploys are not interchangeable, so a second push waits rather than
+# cancelling the first mid-flight.
+concurrency:
+  group: backend-docker-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  # metadata-action lowercases this, which ghcr requires and the owner name is not.
+  IMAGE_NAME: ${{ github.repository }}-backend
+
+jobs:
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # Digest-pinned, so what gets verified and what gets deployed are the
+      # same bytes even if someone moves a tag in between.
+      pinned: ${{ steps.pin.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=prod,enable=${{ github.ref_name == 'release' }}
+          labels: |
+            org.opencontainers.image.title=ClipPilot API
+            org.opencontainers.image.description=Backend for the ClipPilot interactive video campaign builder
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # A plain single-platform manifest. Attestations turn the push into a
+          # manifest list that several deploy targets refuse to pull by digest.
+          provenance: false
+          sbom: false
+
+      - name: Pin the digest
+        id: pin
+        run: |
+          echo "ref=${REGISTRY}/${IMAGE_NAME,,}@${{ steps.push.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Boot the published image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trustvid
+          POSTGRES_PASSWORD: trustvid
+          POSTGRES_DB: trustvid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trustvid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose the runtime environment
+        # The real configuration, from repository secrets and variables, minus
+        # DATABASE_URL: that is pinned to the service container below so a CI
+        # run can never migrate or write to the production database.
+        #
+        # Every value falls back to something harmless, so this workflow is
+        # green on a repository where none of the secrets exist yet and gets
+        # stricter as each one is filled in. ENVIRONMENT=production is
+        # deliberate: it makes Settings.validate_runtime() run for real, so a
+        # missing IP_HASH_SALT or Clerk issuer fails here rather than on the
+        # platform.
+        env:
+          IP_HASH_SALT: ${{ secrets.IP_HASH_SALT || 'ci-verify-salt' }}
+          CLERK_JWKS_URL: ${{ vars.CLERK_JWKS_URL || 'https://example.clerk.accounts.dev/.well-known/jwks.json' }}
+          CLERK_ISSUER: ${{ vars.CLERK_ISSUER || 'https://example.clerk.accounts.dev' }}
+          CLERK_AUDIENCE: ${{ vars.CLERK_AUDIENCE }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'http://localhost:3000' }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_REGION: ${{ vars.S3_REGION || 'ap-south-1' }}
+          S3_KEY_PREFIX: ${{ vars.S3_KEY_PREFIX || 'campaign-videos' }}
+          S3_PUBLIC_BASE_URL: ${{ vars.S3_PUBLIC_BASE_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AGENT_PROVIDER: ${{ vars.AGENT_PROVIDER || 'auto' }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          FIRECRAWL_MCP_URL: ${{ vars.FIRECRAWL_MCP_URL || 'https://mcp.firecrawl.dev/v2/mcp' }}
+        run: |
+          {
+            printf 'ENVIRONMENT=production\n'
+            printf 'DEBUG=false\n'
+            printf 'ALLOW_DEV_AUTH_HEADER=false\n'
+            printf 'SAMPLE_AUDIENCES=false\n'
+            printf 'DATABASE_URL=postgresql+asyncpg://trustvid:trustvid@127.0.0.1:5432/trustvid\n'
+            for name in IP_HASH_SALT CLERK_JWKS_URL CLERK_ISSUER CLERK_AUDIENCE CORS_ORIGINS \
+                        S3_BUCKET S3_REGION S3_KEY_PREFIX S3_PUBLIC_BASE_URL \
+                        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+                        ANTHROPIC_API_KEY OPENAI_API_KEY AGENT_PROVIDER AGENT_MODEL \
+                        FIRECRAWL_API_KEY FIRECRAWL_MCP_URL; do
+              printf '%s=%s\n' "$name" "${!name}"
+            done
+          } > "$RUNNER_TEMP/api.env"
+          echo "Wrote $(wc -l < "$RUNNER_TEMP/api.env") variables (values not echoed)."
+
+      - name: Start the container
+        env:
+          IMAGE: ${{ needs.build.outputs.pinned }}
+        run: |
+          # --network host so 127.0.0.1:5432 inside the container is the
+          # service container the runner published.
+          docker run -d --name clippilot-api \
+            --network host \
+            --env-file "$RUNNER_TEMP/api.env" \
+            -e PORT=8000 \
+            "$IMAGE"
+
+      - name: Probe it
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8000/healthz -o /tmp/healthz.json; then
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' clippilot-api)" != "true" ]; then
+              echo "::error::the container exited during startup"
+              docker logs clippilot-api
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo '==> GET /healthz'
+          curl -fsS http://127.0.0.1:8000/healthz -o /tmp/healthz.json
+          cat /tmp/healthz.json
+          echo
+          grep -q '"status":"ok"' /tmp/healthz.json \
+            || { echo '::error::/healthz did not report ok'; exit 1; }
+
+          echo '==> GET /openapi.json'
+          curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8000/openapi.json
+
+          echo '==> the migrations ran inside the container'
+          docker logs clippilot-api 2>&1 | grep -q 'alembic.runtime.migration' \
+            || { echo '::error::no alembic output in the container log'; docker logs clippilot-api; exit 1; }
+
+          echo '==> the process is not root'
+          test "$(docker exec clippilot-api id -u)" = "1001"
+
+      - name: Container logs
+        if: always()
+        run: docker logs clippilot-api 2>&1 | tail -50 || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f clippilot-api || true
+
+  migrate:
+    name: Migrate the deployment database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, verify]
+    if: github.event_name == 'workflow_dispatch' && inputs.migrate
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: alembic upgrade head
+        # The image is the migration runner: same code, same lockfile, same
+        # alembic. Anything after the image name replaces the server command.
+        env:
+          IMAGE: ${{ needs.build.outputs.pinned }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo '::error::the DATABASE_URL secret is not set, so there is nothing to migrate'
+            exit 1
+          fi
+          docker run --rm -e DATABASE_URL "$IMAGE" alembic upgrade head
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, verify]
+    if: github.ref_name == 'main' || github.ref_name == 'release'
+    steps:
+      - name: Trigger the deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          IMAGE: ${{ needs.build.outputs.pinned }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo 'RENDER_DEPLOY_HOOK_URL is not set; nothing to trigger.'
+            exit 0
+          fi
+          # The hook takes the image to deploy as a query parameter, so the
+          # digest this run verified is the one that goes live.
+          ENCODED=$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["IMAGE"], safe=""))')
+          SEP='?'
+          case "$RENDER_DEPLOY_HOOK_URL" in *\?*) SEP='&';; esac
+          curl -fsS -X POST "${RENDER_DEPLOY_HOOK_URL}${SEP}imgURL=${ENCODED}" >/dev/null
+          echo 'Deploy hook accepted.'
+
+      - name: Summary
+        env:
+          IMAGE: ${{ needs.build.outputs.pinned }}
+          HOOK_SET: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
+        run: |
+          {
+            echo '### Backend image'
+            echo
+            echo "Deployable reference: \`${IMAGE}\`"
+            echo
+            if [ "$HOOK_SET" = 'true' ]; then
+              echo 'The Render deploy hook was triggered with that digest.'
+            else
+              echo 'Deploy was skipped: the `RENDER_DEPLOY_HOOK_URL` secret is not set.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

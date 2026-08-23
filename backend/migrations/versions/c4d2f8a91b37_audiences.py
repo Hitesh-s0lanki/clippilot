@@ -35,6 +35,11 @@ down_revision: str | Sequence[str] | None = "9c1f4a7b2e10"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# SQLite's batch mode reflects the table it is about to copy, and a foreign key
+# the initial migration left unnamed comes back unnamed. Supplying a convention
+# gives it a deterministic name so it can be dropped.
+FK_NAMING_CONVENTION = {"fk": "fk_%(table_name)s_%(column_0_name)s"}
+
 
 def upgrade() -> None:
     """Upgrade schema."""
@@ -149,11 +154,51 @@ def upgrade() -> None:
     )
 
     # --- events follow ------------------------------------------------------
-    # The ids did not change, so renaming the column is the whole remap.
-    with op.batch_alter_table("campaign_events", schema=None) as batch_op:
-        batch_op.alter_column(
-            "recipient_id", new_column_name="member_id", existing_type=sa.String(length=36)
+    # The ids did not change, so renaming the column is most of the remap. The
+    # foreign key has to move with it: it still names campaign_recipients,
+    # which is dropped a few lines below. PostgreSQL refuses that DROP TABLE
+    # while the constraint exists, and SQLite would allow it and leave the
+    # column pointing at a table that is gone.
+    if bind.dialect.name == "postgresql":
+        op.execute("ALTER TABLE campaign_events RENAME COLUMN recipient_id TO member_id")
+        # The initial migration left this constraint unnamed, so the name here
+        # is the one PostgreSQL generated for it.
+        op.execute(
+            "ALTER TABLE campaign_events "
+            "DROP CONSTRAINT IF EXISTS campaign_events_recipient_id_fkey"
         )
+        op.create_foreign_key(
+            "fk_campaign_events_member_id",
+            "campaign_events",
+            "audience_members",
+            ["member_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+    else:
+        # SQLite has no ALTER for constraints, so batch mode copies the table.
+        # naming_convention is what lets that unnamed, reflected foreign key be
+        # addressed by name at all. The new key needs a second block: a foreign
+        # key added in the same block as the rename that creates its column is
+        # dropped from the copy without a word.
+        with op.batch_alter_table(
+            "campaign_events", schema=None, naming_convention=FK_NAMING_CONVENTION
+        ) as batch_op:
+            batch_op.drop_constraint("fk_campaign_events_recipient_id", type_="foreignkey")
+            batch_op.alter_column(
+                "recipient_id", new_column_name="member_id", existing_type=sa.String(length=36)
+            )
+
+        with op.batch_alter_table(
+            "campaign_events", schema=None, naming_convention=FK_NAMING_CONVENTION
+        ) as batch_op:
+            batch_op.create_foreign_key(
+                "fk_campaign_events_member_id",
+                "audience_members",
+                ["member_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
 
     # --- retire the old table ----------------------------------------------
     op.execute("DROP INDEX IF EXISTS uniq_recipient_email_per_campaign")
@@ -233,10 +278,38 @@ def downgrade() -> None:
         """
     )
 
-    with op.batch_alter_table("campaign_events", schema=None) as batch_op:
-        batch_op.alter_column(
-            "member_id", new_column_name="recipient_id", existing_type=sa.String(length=36)
+    # The mirror image of the upgrade: the foreign key goes back to
+    # campaign_recipients before audience_members is dropped below.
+    if bind.dialect.name == "postgresql":
+        op.drop_constraint("fk_campaign_events_member_id", "campaign_events", type_="foreignkey")
+        op.execute("ALTER TABLE campaign_events RENAME COLUMN member_id TO recipient_id")
+        op.create_foreign_key(
+            "campaign_events_recipient_id_fkey",
+            "campaign_events",
+            "campaign_recipients",
+            ["recipient_id"],
+            ["id"],
+            ondelete="SET NULL",
         )
+    else:
+        with op.batch_alter_table(
+            "campaign_events", schema=None, naming_convention=FK_NAMING_CONVENTION
+        ) as batch_op:
+            batch_op.drop_constraint("fk_campaign_events_member_id", type_="foreignkey")
+            batch_op.alter_column(
+                "member_id", new_column_name="recipient_id", existing_type=sa.String(length=36)
+            )
+
+        with op.batch_alter_table(
+            "campaign_events", schema=None, naming_convention=FK_NAMING_CONVENTION
+        ) as batch_op:
+            batch_op.create_foreign_key(
+                "campaign_events_recipient_id_fkey",
+                "campaign_recipients",
+                ["recipient_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
 
     with op.batch_alter_table("campaigns", schema=None) as batch_op:
         batch_op.drop_constraint("fk_campaigns_audience_id", type_="foreignkey")

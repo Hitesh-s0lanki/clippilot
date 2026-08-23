@@ -1,0 +1,41 @@
+# Everything here is either a secret, a host artefact, or dead weight in the
+# image. .env in particular must never be baked in: configuration reaches the
+# container through the platform's environment, not through a copied file.
+
+.env
+.env.*
+!.env.example
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+junit.xml
+htmlcov/
+
+# Local databases and their backups.
+*.db
+*.db-journal
+*.db.bak-*
+*.sqlite3
+
+tests/
+requirements-dev.txt
+
+.git/
+.github/
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.DS_Store
+.idea/
+.vscode/
