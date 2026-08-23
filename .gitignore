@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Local agent overrides (committed skills under .claude/skills are intentional)
+.claude/settings.local.json
+
+# --- Confidential source material -------------------------------------------
+# The assignment brief is Trustvid material marked
+# "CONFIDENTIAL - CANDIDATE EVALUATION". The source document and the verbatim
+# transcription of its sections are deliberately kept out of this public
+# repository. The derived engineering docs in docs/ are original work and are
+# published.
+Trustvid_Full_Stack_Developer_Assignment.docx
+docs/0[1-9]-*.md
+docs/10-fair-use.md

@@ -1,0 +1,209 @@
+name: Backend CI
+
+# Runs only when backend code changes, so frontend and docs commits do not
+# burn CI minutes here. Documentation-only edits inside backend/ are excluded.
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - '!backend/**.md'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '!backend/**.md'
+      - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
+
+# A new push to the same branch cancels the previous run.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend
+
+env:
+  # Fail instead of silently resolving a different dependency set.
+  UV_LOCKED: '1'
+  FORCE_COLOR: '1'
+
+jobs:
+  quality:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          working-directory: backend
+          enable-cache: true
+          cache-suffix: quality
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Verify uv.lock matches pyproject.toml
+        run: uv lock --check
+
+      - name: Ruff lint
+        # Annotates the pull request diff with any violations.
+        run: uv run ruff check --output-format=github .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          working-directory: backend
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: test-${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Run tests with coverage
+        run: |
+          uv run pytest \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html \
+            --junitxml=junit.xml
+
+      - name: Write coverage summary
+        if: always()
+        run: |
+          {
+            echo "### Coverage (Python ${{ matrix.python-version }})"
+            echo ''
+            echo '```'
+            uv run coverage report || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage and test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-reports-py${{ matrix.python-version }}
+          path: |
+            backend/htmlcov/
+            backend/coverage.xml
+            backend/junit.xml
+          retention-days: 7
+          if-no-files-found: warn
+
+  test-postgres:
+    name: Test on PostgreSQL + migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trustvid
+          POSTGRES_PASSWORD: trustvid
+          POSTGRES_DB: trustvid_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trustvid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # asyncpg rejects a ?sslmode= parameter, so it is absent here by design.
+      DATABASE_URL: postgresql+asyncpg://trustvid:trustvid@localhost:5432/trustvid_test
+      TEST_DATABASE_URL: postgresql+asyncpg://trustvid:trustvid@localhost:5432/trustvid_test
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          working-directory: backend
+          enable-cache: true
+          cache-suffix: postgres
+
+      - name: Install dependencies
+        run: uv sync --locked --dev
+
+      - name: Apply migrations
+        # Proves the migrations build a working schema on the deployment
+        # engine, not just that the ORM metadata does.
+        run: uv run alembic upgrade head
+
+      - name: Verify migrations roll back
+        run: uv run alembic downgrade base && uv run alembic upgrade head
+
+      - name: Run tests against PostgreSQL
+        run: uv run pytest -q
+
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [quality, test, test-postgres]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          working-directory: backend
+          enable-cache: true
+          cache-suffix: smoke
+
+      - name: Install runtime dependencies only
+        # No dev group: proves the app boots with just what production installs.
+        run: uv sync --locked --no-dev
+
+      - name: Boot the server and probe it
+        run: bash ./scripts/smoke.sh 8123
+
+  # One stable check to require in branch protection, instead of naming every
+  # matrix job individually. Overrides the workflow-level working-directory
+  # because this job deliberately does not check the repository out.
+  backend-ci:
+    name: Backend CI
+    runs-on: ubuntu-latest
+    needs: [quality, test, test-postgres, smoke]
+    if: always()
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Report job results
+        run: |
+          echo "quality:       ${{ needs.quality.result }}"
+          echo "test:          ${{ needs.test.result }}"
+          echo "test-postgres: ${{ needs.test-postgres.result }}"
+          echo "smoke:         ${{ needs.smoke.result }}"
+
+      - name: Fail if any job did not succeed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "::error::One or more backend CI jobs failed."
+          exit 1

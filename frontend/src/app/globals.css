@@ -1,0 +1,236 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens.
+ *
+ * One palette, addressed by shadcn's canonical token names so every component
+ * from the registry inherits the product's look without being edited. Values
+ * are the ClipPilot palette - an indigo brand on a cool neutral ink/surface
+ * scale - plus `--success` and `--warning`, which shadcn does not ship but the
+ * campaign lifecycle and analytics badges need.
+ *
+ * Nothing outside this file hardcodes a colour: components use the utilities
+ * (`bg-card`, `text-muted-foreground`, `border-border`), so light and dark stay
+ * in step and a rebrand touches this block alone.
+ */
+
+:root {
+  /*
+   * Drives native UI - form controls, scrollbars, autofill - and is also how
+   * Clerk's components pick their light or dark palette. Clerk Core 3 reads
+   * `color-scheme` off the page rather than taking a theme object, so this
+   * pair is the whole of the Clerk dark-mode wiring.
+   */
+  color-scheme: light;
+
+  --background: oklch(0.985 0.003 264);
+  --foreground: oklch(0.21 0.02 265);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 265);
+
+  --primary: oklch(0.52 0.185 273);
+  --primary-foreground: oklch(0.99 0.005 273);
+  --secondary: oklch(0.968 0.004 264);
+  --secondary-foreground: oklch(0.21 0.02 265);
+  --muted: oklch(0.968 0.004 264);
+  --muted-foreground: oklch(0.52 0.019 265);
+  --accent: oklch(0.955 0.008 264);
+  --accent-foreground: oklch(0.21 0.02 265);
+
+  /* Feedback. `--success` and `--warning` extend the stock shadcn set. */
+  --destructive: oklch(0.56 0.19 26);
+  --success: oklch(0.52 0.12 158);
+  --warning: oklch(0.55 0.12 70);
+
+  --border: oklch(0.918 0.005 265);
+  /*
+   * Heavier than `--border` on purpose. `--input` draws the boundary of every
+   * form control in the builder, which WCAG 1.4.11 treats as a non-text UI
+   * component and holds to 3:1 against its background. At the `--border` value
+   * it measured 1.27:1; this measures 3.24:1 against `--card`. `--border` is
+   * decorative (card edges, separators) and is exempt, so it stays light.
+   */
+  --input: oklch(0.65 0.012 265);
+  --ring: oklch(0.52 0.185 273);
+
+  /*
+   * Categorical series for the analytics chart, anchored on the brand hue and
+   * spaced around the wheel so adjacent series stay distinguishable - including
+   * for the most common forms of colour blindness, where two greens do not.
+   */
+  --chart-1: oklch(0.52 0.185 273);
+  --chart-2: oklch(0.6 0.13 205);
+  --chart-3: oklch(0.55 0.13 158);
+  --chart-4: oklch(0.66 0.15 62);
+  --chart-5: oklch(0.56 0.17 335);
+
+  /*
+   * The sidebar plane.
+   *
+   * `Sidebar` is rendered with `variant="inset"`, so the whole page sits on
+   * `--sidebar` and the content panel floats above it as a raised card. That
+   * only reads as depth if the plane is a step *behind* `--background`, which
+   * is why this is darker in light mode and darker still in dark mode - the
+   * ladder runs sidebar → background → card in both themes.
+   */
+  --sidebar: oklch(0.955 0.005 264);
+  --sidebar-foreground: oklch(0.21 0.02 265);
+  --sidebar-primary: oklch(0.52 0.185 273);
+  --sidebar-primary-foreground: oklch(0.99 0.005 273);
+  /* Hover only. The active item is drawn by `AppSidebarNav`, which raises it
+   * onto `--card` so hover and current-page never look the same. */
+  --sidebar-accent: oklch(0.925 0.006 264);
+  --sidebar-accent-foreground: oklch(0.21 0.02 265);
+  --sidebar-border: oklch(0.9 0.005 265);
+  --sidebar-ring: oklch(0.52 0.185 273);
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.165 0.014 266);
+  --foreground: oklch(0.965 0.004 266);
+
+  --card: oklch(0.208 0.016 266);
+  --card-foreground: oklch(0.965 0.004 266);
+  --popover: oklch(0.208 0.016 266);
+  --popover-foreground: oklch(0.965 0.004 266);
+
+  --primary: oklch(0.68 0.16 275);
+  --primary-foreground: oklch(0.17 0.02 275);
+  --secondary: oklch(0.245 0.017 266);
+  --secondary-foreground: oklch(0.965 0.004 266);
+  --muted: oklch(0.245 0.017 266);
+  --muted-foreground: oklch(0.72 0.014 266);
+  --accent: oklch(0.285 0.018 266);
+  --accent-foreground: oklch(0.965 0.004 266);
+
+  --destructive: oklch(0.7 0.17 26);
+  --success: oklch(0.75 0.14 158);
+  --warning: oklch(0.8 0.13 78);
+
+  --border: oklch(0.285 0.018 266);
+  /* 3.23:1 against `--card`; was 1.40:1. See the note in `:root`. */
+  --input: oklch(0.52 0.02 266);
+  --ring: oklch(0.68 0.16 275);
+
+  --sidebar: oklch(0.135 0.013 266);
+  --sidebar-foreground: oklch(0.965 0.004 266);
+  --sidebar-primary: oklch(0.68 0.16 275);
+  --sidebar-primary-foreground: oklch(0.17 0.02 275);
+  --sidebar-accent: oklch(0.245 0.017 266);
+  --sidebar-accent-foreground: oklch(0.965 0.004 266);
+  --sidebar-border: oklch(0.26 0.016 266);
+  --sidebar-ring: oklch(0.68 0.16 275);
+
+  --chart-1: oklch(0.68 0.16 275);
+  --chart-2: oklch(0.72 0.12 205);
+  --chart-3: oklch(0.75 0.14 158);
+  --chart-4: oklch(0.78 0.14 62);
+  --chart-5: oklch(0.7 0.16 335);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * Clerk's card inside the account split.
+ *
+ * The split gives the form column a quarter of the viewport, which is narrower
+ * than the width Clerk's card sizes itself to. Clerk injects its stylesheet at
+ * runtime from its own bundle, so a Tailwind utility - which sits in the
+ * `utilities` layer - is not reliably able to outrank it. This rule is
+ * unlayered and uses a two-class selector, so it wins on both counts and the
+ * card tracks the column instead of overflowing it.
+ */
+[data-auth-form] :is(.cl-rootBox, .cl-cardBox, .cl-card) {
+  width: 100%;
+  max-width: 100%;
+}
