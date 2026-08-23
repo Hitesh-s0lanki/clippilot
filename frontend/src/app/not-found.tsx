@@ -4,9 +4,9 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 
-import { LandingBackdrop } from "./_components/landing-backdrop";
+import { PublicBackdrop } from "./_components/public-backdrop";
 import { NotFoundSuggestions } from "./_components/not-found-suggestions";
-import { PublicChrome } from "./_components/public-chrome";
+import { PublicChrome } from "@/components/layout/public-chrome";
 
 export const metadata: Metadata = {
   title: "Page not found",
@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 export default function NotFound() {
   return (
     <PublicChrome>
-      <main className="relative isolate mx-auto flex w-full max-w-5xl flex-1 flex-col items-start justify-center px-5 py-20 sm:py-28">
-        <LandingBackdrop />
+      <main className="relative isolate mx-auto -mt-17 flex w-full max-w-5xl flex-1 flex-col items-start justify-center px-5 pt-37 pb-20 sm:pt-45 sm:pb-28">
+        <PublicBackdrop />
 
         <p className="font-mono text-sm font-medium text-primary">404</p>
         <h1 className="mt-3 max-w-2xl font-heading text-3xl font-semibold tracking-tight text-balance sm:text-4xl">

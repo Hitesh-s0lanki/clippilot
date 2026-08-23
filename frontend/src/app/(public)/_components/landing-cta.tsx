@@ -1,5 +1,3 @@
-import { siteConfig } from "@/config/site";
-
 import { LandingHeroActions } from "./landing-hero-actions";
 
 /**
@@ -7,7 +5,8 @@ import { LandingHeroActions } from "./landing-hero-actions";
  *
  * A tinted card rather than a solid brand panel, so the same two buttons the
  * hero uses keep their contrast and the page ends on one CTA rather than a
- * second visual language.
+ * second visual language. One heading and the buttons - the paragraph that
+ * used to sit here repeated the footer verbatim, two screens apart.
  */
 export function LandingCta() {
   return (
@@ -26,10 +25,6 @@ export function LandingCta() {
       >
         Build the first campaign in the time it takes to write the message.
       </h2>
-      <p className="mt-3 max-w-xl leading-relaxed text-pretty text-muted-foreground">
-        {siteConfig.description}
-      </p>
-
       <LandingHeroActions />
     </section>
   );

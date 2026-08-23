@@ -7,7 +7,6 @@ import {
   ScaleIcon,
   SparklesIcon,
   TagIcon,
-  UsersIcon,
   VideoIcon,
 } from "lucide-react";
 
@@ -15,10 +14,14 @@ import {
  * Copy for the public landing page.
  *
  * Separate from `siteConfig` because this is marketing prose that only `app/`
- * reads, while `siteConfig` is chrome the whole app depends on. Every claim
- * here maps to something the product actually does - the fields come from
- * `docs/campaign-data-model.md`, so the page cannot promise a feature the
- * builder has no input for.
+ * reads, while `siteConfig` is chrome the whole app depends on.
+ *
+ * The rule this file follows: **state the value, do not describe it**. Every
+ * `facts` entry is a real enum member, field limit or file extension taken
+ * from `docs/campaign-data-model.md` and the schemas in `backend/src/schemas`,
+ * so a reader learns what the product actually accepts instead of reading an
+ * adjective about it - and the page cannot promise a feature the builder has
+ * no input for.
  */
 export const marketing = {
   hero: {
@@ -27,25 +30,30 @@ export const marketing = {
     title: "Personalised video journeys,",
     titleAccent: "from setup to response.",
     description:
-      "ClipPilot is where a marketing team builds a one-to-one video campaign, sends it to a named customer, and watches the reply come back as a number. Schedule, budget, compliance and tracking included.",
-    note: "Drafts stay private. A campaign only goes live once the publish checklist clears.",
+      "Build a one-to-one video campaign, send it to a named customer, and count the reply.",
+    note: "Drafts stay private until the publish checklist clears.",
   },
 
-  /** The chip strip under the hero: what a campaign carries, in five words each. */
+  /** The chip strip under the hero: what a campaign carries, as numbers. */
   capabilities: [
+    { label: "5 campaign objectives", Icon: SparklesIcon },
     { label: "Timezone-aware scheduling", Icon: CalendarClockIcon },
+    { label: "4 special categories", Icon: ScaleIcon },
     { label: "Budget and pacing caps", Icon: GaugeIcon },
-    { label: "Compliance disclaimers", Icon: ScaleIcon },
     { label: "UTM and CRM tracking", Icon: TagIcon },
-    { label: "Single or list audiences", Icon: UsersIcon },
   ],
 
   features: [
     {
       id: "message",
-      title: "A message written once, addressed to everyone",
-      description:
-        "Write the copy with {{customer_name}}, {{campaign_name}} and {{option_label}} in it. The resolver substitutes at render, escapes what it inserts, and falls back to “there” when a recipient has no name - so a preview is never broken.",
+      title: "One message, addressed to everyone",
+      description: "Variables resolve at render, escaped, and never leave a blank.",
+      facts: [
+        "{{customer_name}}",
+        "{{campaign_name}}",
+        "{{option_label}}",
+        "falls back to “there”",
+      ],
       Icon: SparklesIcon,
       /** Wide cards lead each bento row. */
       wide: true,
@@ -53,40 +61,40 @@ export const marketing = {
     {
       id: "options",
       title: "Two options, two outcomes",
-      description:
-        "Each response option carries a label, an intent and its own follow-up - a message or a URL. The recipient always lands somewhere deliberate.",
+      description: "Each answer carries an intent and its own follow-up.",
+      facts: ["Positive", "Neutral", "Negative", "Message or link"],
       Icon: MousePointerClickIcon,
       wide: false,
     },
     {
       id: "video",
       title: "Your video, your CDN",
-      description:
-        "Point the experience at a video URL you already host. Add a poster image and a headline, and the customer page is built for you.",
+      description: "A URL you already host, plus a poster and a headline.",
+      facts: [".mp4", ".webm", ".mov", "https only"],
       Icon: VideoIcon,
       wide: false,
     },
     {
       id: "compliance",
       title: "Built for regulated categories",
-      description:
-        "Declare a special category - financial products, credit, employment, housing - and the disclaimer travels with the campaign onto the customer's screen.",
+      description: "Declare one and the disclaimer travels to the customer's screen.",
+      facts: ["Financial products", "Credit", "Employment", "Housing"],
       Icon: ScaleIcon,
       wide: true,
     },
     {
       id: "analytics",
       title: "Counted, not estimated",
-      description:
-        "Every view and every response is stored as an event against a recipient, so the interaction rate and the option split are arithmetic rather than a guess.",
+      description: "Every view and response is a stored event against a recipient.",
+      facts: ["Views", "Interactions", "Interaction rate", "Unique viewers", "Option split"],
       Icon: BarChart3Icon,
       wide: true,
     },
     {
       id: "delivery",
       title: "Delivery you can hold back",
-      description:
-        "Standard or accelerated pacing, a daily send cap, a lifetime budget and a frequency cap per recipient. Nothing goes out faster than you meant it to.",
+      description: "Nothing goes out faster than you meant it to.",
+      facts: ["Daily or lifetime budget", "Send caps", "Standard or accelerated"],
       Icon: GaugeIcon,
       wide: false,
     },
@@ -133,6 +141,8 @@ interface MarketingConfig {
     id: string;
     title: string;
     description: string;
+    /** Real enum members, limits and extensions - never adjectives. */
+    facts: ReadonlyArray<string>;
     Icon: LucideIcon;
     wide: boolean;
   }>;

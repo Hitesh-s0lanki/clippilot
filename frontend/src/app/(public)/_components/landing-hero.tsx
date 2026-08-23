@@ -2,7 +2,7 @@ import { ShieldCheckIcon, SparklesIcon } from "lucide-react";
 
 import { marketing } from "@/config/marketing";
 
-import { LandingBackdrop } from "./landing-backdrop";
+import { PublicBackdrop } from "../../_components/public-backdrop";
 import { LandingHeroActions } from "./landing-hero-actions";
 import { LandingHeroVisual } from "./landing-hero-visual";
 
@@ -20,17 +20,17 @@ export function LandingHero() {
   const { eyebrow, title, titleAccent, description, note } = marketing.hero;
 
   return (
-    <section className="relative isolate">
-      <LandingBackdrop />
+    <section className="relative isolate pt-17">
+      <PublicBackdrop />
 
-      <div className="mx-auto grid w-full max-w-5xl items-center gap-12 px-5 py-14 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] lg:gap-12">
+      <div className="mx-auto grid w-full max-w-5xl items-center gap-10 px-5 py-10 sm:gap-12 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,23rem)] lg:gap-12">
         <div>
           <p className="inline-flex items-center gap-2 rounded-4xl border border-border bg-card/70 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
             <SparklesIcon aria-hidden className="size-3.5 text-primary" />
             {eyebrow}
           </p>
 
-          <h1 className="mt-5 font-heading text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+          <h1 className="mt-5 font-heading text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl sm:leading-[1.08]">
             {title} <span className="text-primary">{titleAccent}</span>
           </h1>
 

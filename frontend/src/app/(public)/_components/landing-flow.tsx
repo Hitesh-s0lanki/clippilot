@@ -13,12 +13,7 @@ import { LandingSection } from "./landing-section";
  */
 export function LandingFlow() {
   return (
-    <LandingSection
-      id="how-it-works"
-      eyebrow="How it works"
-      title="One loop, start to finish."
-      description="A campaign leaves the console, reaches one named customer, and comes back as a recorded event. Nothing in the middle is a hand-off to another tool."
-    >
+    <LandingSection id="how-it-works" eyebrow="How it works" title="One loop, start to finish.">
       <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {siteConfig.flow.map((step, index) => (
           <LandingFlowStep

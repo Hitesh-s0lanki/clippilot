@@ -1,4 +1,5 @@
 import type { CampaignPreview, PreviewEvent, ResponseResult } from "@/types/preview";
+import type { PublicCampaignPage } from "@/types/public";
 
 import { api } from "./client";
 
@@ -10,6 +11,29 @@ import { api } from "./client";
  * `./session`. That is what keeps this module importable from the browser,
  * where the response click actually happens.
  */
+
+export interface ListPublicCampaignsInput {
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * The ads library: every campaign that is live right now, newest first.
+ *
+ * Needs no id and no session, so it is the one public read that anyone can
+ * reach by typing a URL. Left uncached because a campaign leaves the listing
+ * the moment its owner pauses it.
+ */
+export function listPublicCampaigns(
+  { limit, offset }: ListPublicCampaignsInput = {},
+  signal?: AbortSignal,
+): Promise<PublicCampaignPage> {
+  return api.get<PublicCampaignPage>("/public/campaigns", {
+    query: { limit, offset },
+    cache: "no-store",
+    signal,
+  });
+}
 
 export function getPublicPreview(
   campaignId: string,

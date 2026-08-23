@@ -20,9 +20,7 @@ export function LandingResolutionCard() {
       </p>
 
       <p className="mt-4 border-t border-border pt-4 text-sm leading-relaxed text-pretty text-muted-foreground">
-        The same substitution runs over the headline and both follow-up messages. A recipient with
-        no name on file gets &ldquo;Hi there&rdquo; rather than a blank, so a preview is never
-        broken by missing data.
+        A recipient with no name on file gets &ldquo;Hi there&rdquo;, never a blank.
       </p>
     </article>
   );

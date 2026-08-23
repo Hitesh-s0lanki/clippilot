@@ -2,12 +2,18 @@ import { AuthBrandPanel } from "./_components/auth-brand-panel";
 import { AuthFormPanel } from "./_components/auth-form-panel";
 
 /**
- * Shell for the account routes: a two-sided screen, brand panel to form column
- * at 3:1.
+ * Shell for the account routes: a two-sided screen, split down the middle.
  *
- * The ratio is exact - `3fr 1fr` - and engages at `xl`. Below that a quarter of
- * the viewport is narrower than a sign-in card can usefully be, so the grid
- * drops to the single column the panel is already hidden at.
+ * Equal halves - `grid-cols-2` - engaging at `lg`, where half a viewport is
+ * still wider than the 25rem card Clerk sizes itself to. Below that the brand
+ * panel steps aside rather than shrinking into an unreadable strip, and the
+ * form takes the single column.
+ *
+ * `h-dvh` with `overflow-hidden` caps the screen at the viewport: an account
+ * screen is one card and a paragraph, and a page that scrolls to reveal more of
+ * either is a sign the panel is carrying too much. Each half scrolls
+ * internally instead, so a short laptop or a tall sign-up form is still
+ * reachable without the page itself moving.
  *
  * No app chrome: the root layout renders none, and a site header offering
  * "Sign in" on top of the sign-in page is exactly the duplication this layout
@@ -16,7 +22,7 @@ import { AuthFormPanel } from "./_components/auth-form-panel";
  */
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
-    <div className="grid min-h-dvh flex-1 xl:grid-cols-[3fr_1fr]">
+    <div className="grid h-dvh overflow-hidden lg:grid-cols-2">
       <AuthBrandPanel />
       <AuthFormPanel>{children}</AuthFormPanel>
     </div>

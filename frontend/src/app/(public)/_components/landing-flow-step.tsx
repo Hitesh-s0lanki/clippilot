@@ -45,9 +45,6 @@ export function LandingFlowStep({ step, isLast }: LandingFlowStepProps) {
         <p className="mt-1.5 text-sm leading-relaxed text-pretty text-muted-foreground">
           {step.description}
         </p>
-        <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-pretty text-muted-foreground">
-          {step.detail}
-        </p>
       </article>
 
       {isLast ? null : (

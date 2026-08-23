@@ -5,21 +5,25 @@ import { AuthBrandBackdrop } from "./auth-brand-backdrop";
 import { AuthFlowList } from "./auth-flow-list";
 
 /**
- * The wide half of the account screens - three of the split's four columns.
+ * The left half of the account screens.
  *
- * It carries the product context that the form column has no room for: the
- * mark, the promise, and the four steps a campaign moves through. An `<aside>`
- * with an `<h2>`, not an `<h1>`: the page's main heading is the one Clerk
- * renders inside the card, and two competing `<h1>`s would leave a screen
+ * It carries the product context the form column has no room for: the mark,
+ * the promise, and the shape of the journey. It deliberately stops there - the
+ * long description that used to sit under the headline said the same thing the
+ * headline says, and a wall of copy beside a sign-in form competes with the one
+ * thing the visitor came to do.
+ *
+ * The mark is pinned to the top and everything else is centred as one block, so
+ * the panel does not split into two clumps with a hole between them the way
+ * `justify-between` leaves it at full viewport height.
+ *
+ * An `<aside>` with an `<h2>`, not an `<h1>`: the page's main heading is the one
+ * Clerk renders inside the card, and two competing `<h1>`s would leave a screen
  * reader without a single obvious title.
- *
- * Hidden below `xl`. At narrower widths a quarter-viewport form column is too
- * cramped for a sign-in card, so the split collapses and this panel steps
- * aside rather than shrinking into an unreadable strip.
  */
 export function AuthBrandPanel() {
   return (
-    <aside className="relative hidden flex-col justify-between gap-16 overflow-hidden border-r border-border bg-card p-14 xl:flex 2xl:p-20">
+    <aside className="relative hidden flex-col overflow-y-auto border-r border-border bg-card p-10 lg:flex xl:p-14">
       <AuthBrandBackdrop />
 
       <div className="relative flex items-center gap-3">
@@ -30,16 +34,12 @@ export function AuthBrandPanel() {
         </div>
       </div>
 
-      <div className="relative max-w-2xl">
-        <h2 className="font-heading text-4xl font-semibold tracking-tight text-balance 2xl:text-5xl">
+      {/* `my-auto` rather than `justify-center`: it centres the block without
+          clipping the top of it when the panel is shorter than its content. */}
+      <div className="relative my-auto max-w-xl space-y-10 py-10">
+        <h2 className="font-heading text-3xl font-semibold tracking-tight text-balance xl:text-4xl">
           {siteConfig.headline}
         </h2>
-        <p className="mt-5 text-base leading-relaxed text-pretty text-muted-foreground">
-          {siteConfig.description}
-        </p>
-      </div>
-
-      <div className="relative">
         <AuthFlowList />
       </div>
     </aside>

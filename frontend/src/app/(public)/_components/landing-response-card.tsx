@@ -29,7 +29,14 @@ const METRICS = [
 export function LandingResponseCard() {
   return (
     <article className="flex h-full flex-col rounded-2xl border border-border bg-card p-6">
-      <h3 className="font-heading font-semibold tracking-tight">What comes back</h3>
+      <div className="flex items-center gap-2">
+        <h3 className="font-heading font-semibold tracking-tight">What comes back</h3>
+        {/* These figures are invented. Saying so beside them costs one word and
+            keeps the card from reading as a real campaign's results. */}
+        <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          Illustrative
+        </span>
+      </div>
 
       <dl className="mt-4 grid grid-cols-3 gap-3">
         {METRICS.map(({ label, value }) => (
@@ -62,8 +69,7 @@ export function LandingResponseCard() {
       </ul>
 
       <p className="mt-4 border-t border-border pt-4 text-sm leading-relaxed text-pretty text-muted-foreground">
-        Every option gets a row, including one nobody clicked - a missing bar is a bug, not a
-        result. The split is read from stored events, so it reconciles with the view count.
+        Every option gets a row, including one nobody clicked.
       </p>
     </article>
   );

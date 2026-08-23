@@ -13,6 +13,10 @@ import { PublicFooterNav } from "./public-footer-nav";
  * Every href here resolves. The console links sit behind the session guard, so
  * a signed-out visitor following one lands on sign-in rather than a dead end.
  *
+ * Two columns from the smallest screen up, with the brand block spanning
+ * both: three link lists stacked one per row turned the footer into its own
+ * screenful of scrolling on a phone.
+ *
  * `mt-auto` pins it to the bottom of short pages, which works only while it is
  * a direct flex child of `<body>` - see `PublicChrome`.
  */
@@ -20,7 +24,7 @@ export function PublicFooter() {
   return (
     <footer className="mt-auto border-t border-border bg-card/40">
       <div className="mx-auto w-full max-w-5xl px-5 py-12">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))]">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-10 lg:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))]">
           <PublicFooterBrand />
           {siteConfig.footerNav.map((column) => (
             <PublicFooterNav key={column.title} column={column} />

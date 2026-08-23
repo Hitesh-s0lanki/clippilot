@@ -15,8 +15,27 @@ frontend/src/
 ├── app/
 │   ├── layout.tsx                     # root shell — html/body, fonts, chrome
 │   ├── globals.css                    # Tailwind v4 theme + semantic tokens
-│   ├── error.tsx  not-found.tsx
-│   ├── page.tsx                       # public landing
+│   ├── error.tsx  not-found.tsx  global-error.tsx
+│   ├── _components/                   # what the root special files above use
+│   │   ├── public-backdrop.tsx
+│   │   ├── not-found-suggestions.tsx
+│   │   └── error-checklist.tsx
+│   │
+│   ├── (public)/                      # anyone can reach these, no session needed
+│   │   ├── layout.tsx                 # site header + full footer, for the whole group
+│   │   ├── page.tsx                   # the landing page, served at /
+│   │   ├── _components/
+│   │   │   ├── landing-hero.tsx
+│   │   │   ├── landing-flow.tsx
+│   │   │   └── landing-faq.tsx
+│   │   └── ads/                       # the public ads library, served at /ads
+│   │       ├── page.tsx
+│   │       ├── loading.tsx
+│   │       ├── error.tsx
+│   │       ├── _lib/ads-query.ts
+│   │       └── _components/
+│   │           ├── ads-grid.tsx
+│   │           └── ads-card.tsx
 │   │
 │   ├── (auth)/                        # unauthenticated account routes
 │   │   ├── layout.tsx                 # centred card shell, no app chrome
@@ -79,7 +98,7 @@ frontend/src/
 │
 ├── components/                        # CROSS-GROUP only
 │   ├── ui/                            # primitives: button, card, badge, input, …
-│   ├── layout/                        # site-header, site-footer
+│   ├── layout/                        # site-header, the two chromes, both footers
 │   └── api-status.tsx
 ├── config/site.ts                     # static app config
 ├── lib/
@@ -88,9 +107,16 @@ frontend/src/
 └── types/                             # api.ts, campaign.ts — shared contracts
 ```
 
-Route groups `(auth)` and `(protected)` are parentheses-wrapped, so they shape the layout
-tree without appearing in the URL: `app/(protected)/dashboard/page.tsx` serves
-`/dashboard`. Folders prefixed with `_` are opted out of routing entirely — `_components`
+Route groups `(public)`, `(auth)` and `(protected)` are parentheses-wrapped, so they shape
+the layout tree without appearing in the URL: `app/(protected)/dashboard/page.tsx` serves
+`/dashboard`, and `app/(public)/page.tsx` serves `/`.
+
+A handful of files cannot move into a group, because Next.js resolves them by position:
+`layout.tsx`, `globals.css`, `global-error.tsx`, and `not-found.tsx` — the root
+`not-found.tsx` is what answers a URL matching no route, and a copy inside a group only
+handles `notFound()` thrown within that group. `app/error.tsx` stays at the root too, as
+the boundary every group falls back to. `app/_components/` exists for those files and is
+not a home for anything else. Folders prefixed with `_` are opted out of routing entirely — `_components`
 is never a URL, which is exactly why colocation is safe.
 
 ## Where does this file go?
