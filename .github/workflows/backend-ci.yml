@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           working-directory: backend
           enable-cache: true
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           working-directory: backend
           python-version: ${{ matrix.python-version }}
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           working-directory: backend
           enable-cache: true
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           working-directory: backend
           enable-cache: true
