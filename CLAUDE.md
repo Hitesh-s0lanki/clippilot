@@ -10,7 +10,7 @@ the campaign's analytics. The end-to-end flow matters more than screen count —
 | Path | What lives here |
 | --- | --- |
 | [frontend/](frontend/) | Next.js 16 App Router · React 19 · TypeScript · Tailwind v4 · shadcn/ui |
-| [backend/](backend/) | FastAPI · SQLAlchemy · Python 3.12 (`src/app`, `src/core`, `src/models`, `src/repositories`, `src/schemas`) |
+| [backend/](backend/) | FastAPI · SQLAlchemy · Python 3.12 (`src/app`, `src/core`, `src/models`, `src/repositories`, `src/schemas`, `src/agents`) |
 | [docs/](docs/) | The brief, transcribed and extended. [docs/README.md](docs/README.md) is the index |
 
 Requirements live in the docs — read [docs/03-functional-requirements.md](docs/03-functional-requirements.md)
@@ -31,8 +31,15 @@ cd backend  && uv run pytest
 The full spec is in the **`frontend-structure`** skill; load it before you add, move, or
 rename anything under `frontend/src`. The short version:
 
-- Routes live in two groups: `app/(auth)/` and `app/(protected)/`. Public customer-facing
-  routes (landing, campaign preview) stay outside both, at the `app/` top level.
+- Routes live in three groups: `app/(public)/`, `app/(auth)/` and `app/(protected)/`,
+  each bringing its own chrome. `(public)` is the surface anyone can reach — the landing
+  page and the ads library — and its layout carries the site header and the full footer.
+- Only what Next.js pins there stays loose at the `app/` top level: `layout.tsx`,
+  `globals.css`, `not-found.tsx`, `error.tsx` and `global-error.tsx`. The root
+  `not-found.tsx` is the one that answers unmatched URLs, so it cannot move into a group.
+  `app/_components/` holds what those root files use, and nothing else.
+- The recipient preview (`app/preview/[campaignId]`) sits outside every group on purpose:
+  it wears its own frame rather than the site chrome.
 - **Every route owns a `_components/` folder** next to its `page.tsx`. That is where its
   components go — not in `src/components`, not inline in the page.
 - A group-level `_components/` (`app/(protected)/_components/`) holds what two or more
@@ -48,6 +55,23 @@ Load the **`frontend-component`** skill before writing a component. The rule it 
 a `page.tsx` composes and nothing else, a component file exports one component, and a
 screen is built from several small named pieces rather than one long file. A 300-line
 `campaign-builder-form.tsx` is a bug in the structure, not a big component.
+
+## Backend agents — non-negotiable
+
+`src/agents/BaseAgent` is the base class for **every** agent, present and future. Read
+[docs/agents.md](docs/agents.md) before adding one. The short version:
+
+- A new agent is: two Pydantic schemas, one Markdown prompt, a subclass, and one import
+  line in `src/agents/__init__.py`. Nothing in the controller, service or router changes.
+- **Prompts are `.md` files in `src/agents/prompts/`**, never Python string literals. One
+  file per agent, named after the agent. `{{placeholders}}` that aren't supplied are left
+  as literal text — that is what keeps `{{customer_name}}` intact.
+- **Field-level instruction belongs in the schema's `description=`**, not the prompt. The
+  output schema is handed to the model as a tool definition, so descriptions are read as
+  instructions. Restating them in the prompt just creates a second copy to keep in sync.
+- Rules that must hold *every* time go in `finalise()`. A prompt makes something likely;
+  only code makes it certain.
+- Agents never invent fields. The draft they emit maps onto `CampaignCreate` exactly.
 
 ## Conventions
 

@@ -8,6 +8,7 @@ from src.models.ad import Ad, AdOption
 from src.models.audience import Audience, AudienceMember
 from src.models.campaign import Campaign
 from src.models.event import CampaignEvent
+from src.models.generation import GenerationAsset, GenerationJob
 
 __all__ = [
     "Ad",
@@ -16,4 +17,6 @@ __all__ = [
     "AudienceMember",
     "Campaign",
     "CampaignEvent",
+    "GenerationAsset",
+    "GenerationJob",
 ]

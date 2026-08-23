@@ -26,14 +26,22 @@ data handling and product judgment.
 | --- | --- |
 | [Backend Architecture](backend-architecture.md) | Implemented schemas, services and routing |
 | [Campaign Data Model](campaign-data-model.md) | The campaign as a proper top-level entity |
+| [Agents](agents.md) | The LangChain base agent, the Markdown prompts, and the campaign strategist |
 | [Delivery Checklist](delivery-checklist.md) | The requirements flattened into a tickable list |
+| [AI Video Generation Pipeline](ai-video-pipeline.md) | `EXT` — uploading references and generating the campaign video |
+| [MiniMax H3 Model Reference](minimax-h3-model.md) | `EXT` — what the model can do, and what it costs to run |
+
+> The last two are **beyond the brief**, which puts AI generation out of scope. They design
+> the subsystem that would fill `campaign_ads.video_url` with a generated file rather than an
+> uploaded one, and they are written so the core flow keeps working with the whole thing
+> switched off. Read them as a pair — the model's constraints are what shape the pipeline.
 
 ## Campaign structure
 
 The brief describes a campaign as a video URL, one message and two buttons. That is a
 *creative*. [**Campaign Data Model**](campaign-data-model.md) promotes **Campaign** to a
 proper top-level entity — objective, lifecycle, schedule, budget, audience, compliance and
-tracking — modelled on the Meta Ads campaign object, with the video experience nested
+tracking — modelled on the Meta Ads campaign object, with one or more **ads** nested
 beneath it.
 
 Everything the brief mandates is preserved and marked `BRIEF`; everything added is marked
