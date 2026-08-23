@@ -17,3 +17,8 @@
 Trustvid_Full_Stack_Developer_Assignment.docx
 docs/0[1-9]-*.md
 docs/10-fair-use.md
+
+# --- Modal / infra ----------------------------------------------------------
+__pycache__/
+# Smoke-test output from infra/modal/h3_app.py::smoke
+h3-*.mp4
