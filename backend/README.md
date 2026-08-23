@@ -503,9 +503,27 @@ refuses to push a placeholder - a `dev-only-change-me` salt or a SQLite
 `DATABASE_URL` would leave the workflow looking configured when it is not.
 
 ```bash
-./scripts/sync-github-secrets.sh --dry-run   # names and lengths only
-./scripts/sync-github-secrets.sh             # push
+./scripts/sync-github-secrets.sh --dry-run       # names and lengths only
+./scripts/sync-github-secrets.sh                 # push
+./scripts/sync-github-secrets.sh --database-url  # prompt for the deployment DB
 ```
+
+`--database-url` exists because `.env` normally holds the SQLite URL for local
+work, so there is nothing there worth pushing. It reads the deployment URL from
+a hidden prompt - out of the shell history and out of the process list - and
+normalises it, which a managed provider's URL always needs:
+
+| Given by the provider | Why it fails | Fixed to |
+| --- | --- | --- |
+| `postgresql://` | SQLAlchemy resolves that to psycopg2, which is not installed | `postgresql+asyncpg://` |
+| `?sslmode=require`, `&channel_binding=require` | asyncpg raises `invalid connection option`; it negotiates TLS itself | dropped |
+| `ep-xxx.<region>.aws.neon.tech` | the direct endpoint exhausts connections under a pool | warns, use `ep-xxx-pooler.…` |
+
+Note what this secret is *not* for. The running container reads `DATABASE_URL`
+from the platform's own environment - `.env` is in `.dockerignore` and nothing
+is baked into the image. The secret exists so the `migrate` job can reach the
+deployment database; setting it does not change what the deployed service
+connects to. That has to be set on the platform as well.
 
 ### Without Docker
 
