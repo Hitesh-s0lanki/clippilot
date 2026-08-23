@@ -439,6 +439,34 @@ The image ships with `ENVIRONMENT=production`, `DEBUG=false` and
 `ALLOW_DEV_AUTH_HEADER=false` already set, so a container that boots at all has
 passed `Settings.validate_runtime()`.
 
+The entrypoint checks that configuration *before* it touches the database, so a
+missing variable is named rather than buried:
+
+```
+entrypoint: ERROR: DATABASE_URL is not set.
+entrypoint:   Set it in the platform's environment to the pooled connection
+entrypoint:   string, with the postgresql+asyncpg:// driver and no ?sslmode=
+```
+
+Left to itself, an unset `DATABASE_URL` falls back to the localhost default in
+`Settings` and surfaces as `Connect call failed ('127.0.0.1', 5432)` at the
+bottom of a forty-line asyncpg traceback, which names neither the variable nor
+the fix.
+
+### What the platform has to set
+
+The image carries no configuration. At minimum a deployed service needs:
+
+| Variable | Why |
+| --- | --- |
+| `DATABASE_URL` | No database exists inside the container |
+| `IP_HASH_SALT` | `validate_runtime()` rejects the `dev-only-change-me` placeholder |
+| `CLERK_JWKS_URL`, `CLERK_ISSUER` | Required in production; without them no session verifies |
+| `CORS_ORIGINS` | The deployed frontend origin, or the browser blocks every call |
+
+`S3_*` and the agent keys are optional - uploads fall back to a pasted URL and
+the `/agents` endpoints switch off, while the rest of the API is unaffected.
+
 ### Local stack
 
 [`docker-compose.yml`](docker-compose.yml) pairs the image with PostgreSQL 17:
