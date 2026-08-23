@@ -1,15 +1,10 @@
-import type {
-  AudienceType,
-  BudgetType,
-  CampaignObjective,
-  FollowUpType,
-  OptionIntent,
-  Pacing,
-  SpecialCategory,
-} from "@/types/campaign";
+import type { BudgetType, CampaignObjective, Pacing, SpecialCategory } from "@/types/campaign";
 
 /**
- * The builder's form state.
+ * The campaign form's state.
+ *
+ * Campaign settings only: the creative lives in `ad-form-values.ts`, because
+ * ads are a separate screen and a 1:N child.
  *
  * Every field is a string, including the numeric ones. A form input's value is
  * a string whether or not the field is a number, and mirroring that honestly
@@ -17,23 +12,6 @@ import type {
  * empty. The conversion to the wire format happens once, in
  * `campaign-form-payload.ts`.
  */
-
-export interface OptionFormValues {
-  /** 1 or 2 - the brief's two response options, fixed. */
-  position: number;
-  label: string;
-  intent: OptionIntent;
-  follow_up_type: FollowUpType;
-  follow_up_message: string;
-  follow_up_url: string;
-}
-
-export interface RecipientFormValues {
-  customer_name: string;
-  email: string;
-  phone: string;
-  external_ref: string;
-}
 
 export interface CampaignFormValues {
   name: string;
@@ -44,14 +22,15 @@ export interface CampaignFormValues {
   end_at: string;
   timezone: string;
 
-  audience_type: AudienceType;
-  recipients: RecipientFormValues[];
-
-  video_url: string;
-  poster_url: string;
-  headline: string;
-  personalised_message: string;
-  options: OptionFormValues[];
+  /**
+   * The list this campaign targets, by id. Empty until one is chosen.
+   *
+   * An audience is account-level and built on its own screen, so the builder
+   * selects one rather than carrying rows of people: the same list can be
+   * targeted by several campaigns, and editing it here would edit it for all
+   * of them.
+   */
+  audience_id: string;
 
   special_category: SpecialCategory;
   disclaimer_text: string;
@@ -73,23 +52,6 @@ export interface CampaignFormValues {
   external_ref: string;
 }
 
-export const DEFAULT_MESSAGE = "Hi {{customer_name}}, we have something selected for you.";
-
-function emptyOption(position: number, intent: OptionIntent): OptionFormValues {
-  return {
-    position,
-    label: "",
-    intent,
-    follow_up_type: "MESSAGE",
-    follow_up_message: "",
-    follow_up_url: "",
-  };
-}
-
-export function emptyRecipient(): RecipientFormValues {
-  return { customer_name: "", email: "", phone: "", external_ref: "" };
-}
-
 /** A new campaign, pre-filled with the defaults the API would apply anyway. */
 export function emptyCampaignForm(timezone = "UTC"): CampaignFormValues {
   return {
@@ -101,14 +63,7 @@ export function emptyCampaignForm(timezone = "UTC"): CampaignFormValues {
     end_at: "",
     timezone,
 
-    audience_type: "SINGLE",
-    recipients: [emptyRecipient()],
-
-    video_url: "",
-    poster_url: "",
-    headline: "",
-    personalised_message: DEFAULT_MESSAGE,
-    options: [emptyOption(1, "POSITIVE"), emptyOption(2, "NEGATIVE")],
+    audience_id: "",
 
     special_category: "NONE",
     disclaimer_text: "",

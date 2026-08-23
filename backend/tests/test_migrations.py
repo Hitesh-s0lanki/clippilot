@@ -69,3 +69,59 @@ class TestMigrationParity:
         # The specific omission this module was written for.
         assert "uniq_campaign_owner_name" in migration_source
         assert "lower(name)" in migration_source
+
+
+class TestStartupSchemaGuard:
+    """`create_all` must never run against a database Alembic already owns.
+
+    The bug this guards: `create_all` adds missing tables and silently leaves
+    existing ones alone, so a stale SQLite file gains the new tables (empty)
+    while an existing table keeps missing the column the ORM now expects. The
+    first query fails with `no such column`, a long way from the cause.
+    """
+
+    def test_a_fresh_file_is_created_from_the_metadata(self, tmp_path: Path) -> None:
+        from sqlalchemy import create_engine, inspect
+
+        from src.main import _prepare_sqlite_schema
+
+        engine = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
+        with engine.begin() as connection:
+            _prepare_sqlite_schema(connection)
+
+        with engine.connect() as connection:
+            tables = set(inspect(connection).get_table_names())
+
+        assert {"campaigns", "campaign_ads", "ad_options", "audiences"} <= tables
+
+    def test_a_database_behind_head_is_refused(self, tmp_path: Path) -> None:
+        from sqlalchemy import create_engine
+
+        from src.main import _prepare_sqlite_schema
+
+        engine = create_engine(f"sqlite:///{tmp_path / 'stale.db'}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+            connection.exec_driver_sql("INSERT INTO alembic_version VALUES ('581afeb93402')")
+
+        with pytest.raises(RuntimeError, match="alembic upgrade head"), engine.begin() as conn:
+            _prepare_sqlite_schema(conn)
+
+    def test_a_database_at_head_is_left_alone(self, tmp_path: Path) -> None:
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import create_engine, inspect
+
+        from src.main import MIGRATIONS_DIR, _prepare_sqlite_schema
+
+        head = ScriptDirectory(str(MIGRATIONS_DIR)).get_current_head()
+        engine = create_engine(f"sqlite:///{tmp_path / 'current.db'}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+            connection.exec_driver_sql(f"INSERT INTO alembic_version VALUES ('{head}')")
+
+        with engine.begin() as connection:
+            _prepare_sqlite_schema(connection)
+
+        # Nothing invented: a migration-managed database is Alembic's to build.
+        with engine.connect() as connection:
+            assert inspect(connection).get_table_names() == ["alembic_version"]

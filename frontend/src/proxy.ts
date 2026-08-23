@@ -9,13 +9,20 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
  */
 
 /**
- * Everything a recipient touches, plus the account routes themselves.
+ * Everything a recipient touches, the public ads library, plus the account
+ * routes themselves.
  *
  * Listed as an allowlist rather than protecting named prefixes, so a new
  * screen is private by the fact that nobody added it here - a forgotten
  * campaign route leaks nothing.
  */
-const isPublicRoute = createRouteMatcher(["/", "/login(.*)", "/register(.*)", "/preview(.*)"]);
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/ads(.*)",
+  "/login(.*)",
+  "/register(.*)",
+  "/preview(.*)",
+]);
 
 export default clerkMiddleware(async (auth, request) => {
   if (isPublicRoute(request)) return;

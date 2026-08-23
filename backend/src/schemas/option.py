@@ -10,7 +10,7 @@ from src.schemas.validators import clean_text, slugify, validate_https_url
 class OptionInput(StrictModel):
     """One response button as submitted by the builder."""
 
-    position: int = Field(..., ge=1, le=2, description="1 or 2. Unique per experience.")
+    position: int = Field(..., ge=1, le=2, description="1 or 2. Unique per ad.")
     label: str | None = Field(None, max_length=40, description="Button text.")
     intent: OptionIntent = OptionIntent.NEUTRAL
     follow_up_type: FollowUpType = FollowUpType.MESSAGE

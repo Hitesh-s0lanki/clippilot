@@ -1,84 +1,96 @@
 "use client";
 
-import { PlusIcon } from "lucide-react";
+import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { AUDIENCE_TYPE_LABELS } from "@/lib/campaign-labels";
-import type { AudienceType } from "@/types/campaign";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatCount } from "@/lib/format";
+import type { AudienceSummary } from "@/types/audience";
 
 import type { CampaignForm } from "../_hooks/use-campaign-form";
-import { BuilderRecipientRow } from "./builder-recipient-row";
+import { BuilderField } from "./builder-field";
 
 export interface BuilderAudienceSectionProps {
   form: CampaignForm;
+  /** Every list on the account, read on the server by the page above. */
+  audiences: AudienceSummary[];
 }
 
 /**
- * Section 2 - who receives the campaign.
+ * Section 2 - which list receives the campaign.
  *
- * The audience type is a real constraint, not a label: the API rejects a
- * `SINGLE` campaign that carries two recipients, so switching to a list is
- * what the "Add recipient" button does first.
+ * A selection, not an editor. An audience is account-level and any number of
+ * campaigns can point at the same one, so editing people here would edit them
+ * for every other campaign targeting that list - which is exactly the mistake
+ * a builder that owned its own rows used to invite.
  */
-export function BuilderAudienceSection({ form }: BuilderAudienceSectionProps) {
-  const { values, errors, setField, setRecipient, addRecipient, removeRecipient, revalidate } =
-    form;
+export function BuilderAudienceSection({ form, audiences }: BuilderAudienceSectionProps) {
+  const { values, errors, setField, revalidate } = form;
+  const selected = audiences.find((audience) => audience.id === values.audience_id);
 
-  const isList = values.audience_type === "LIST";
+  if (audiences.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center">
+        <p className="text-sm font-medium">No audiences yet</p>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-pretty text-muted-foreground">
+          A campaign is sent to a list of people. Build one — a single customer is a list of one —
+          and it will be selectable here and reusable by every other campaign.
+        </p>
+        <Link
+          href="/audiences"
+          className="mt-3 inline-block text-sm font-medium underline underline-offset-4"
+        >
+          Create an audience
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <>
-      <div className="space-y-1.5">
-        <Label id="audience-type-label">Audience</Label>
-        <ToggleGroup
-          type="single"
-          value={values.audience_type}
-          aria-labelledby="audience-type-label"
-          onValueChange={(value) => {
-            if (!value) return;
-            setField("audience_type", value as AudienceType);
-            if (value === "SINGLE" && values.recipients.length > 1) {
-              setField("recipients", values.recipients.slice(0, 1));
-            }
-          }}
-        >
-          <ToggleGroupItem value="SINGLE">{AUDIENCE_TYPE_LABELS.SINGLE}</ToggleGroupItem>
-          <ToggleGroupItem value="LIST">{AUDIENCE_TYPE_LABELS.LIST}</ToggleGroupItem>
-        </ToggleGroup>
-        <p className="text-xs text-muted-foreground">
-          {isList
-            ? "Each recipient gets their own preview link, resolved with their own name."
-            : "One recipient. Switch to a list to send the same journey to several people."}
-        </p>
-      </div>
+      <BuilderField
+        field="audience_id"
+        label="Audience"
+        error={errors.audience_id}
+        hint="The list this campaign is sent to. Each member gets their own link, resolved with their own name."
+      >
+        {(control) => (
+          <Select
+            value={values.audience_id}
+            onValueChange={(value) => {
+              setField("audience_id", value);
+              revalidate();
+            }}
+          >
+            <SelectTrigger {...control} className="h-9 w-full">
+              <SelectValue placeholder="Choose an audience" />
+            </SelectTrigger>
+            <SelectContent>
+              {audiences.map((audience) => (
+                <SelectItem key={audience.id} value={audience.id}>
+                  {audience.name} · {formatCount(audience.member_count)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </BuilderField>
 
-      {errors.recipients ? (
-        <p role="alert" className="text-sm font-medium text-destructive">
-          {errors.recipients}
+      {selected ? (
+        <p className="text-xs text-muted-foreground">
+          {selected.member_count === 0
+            ? "This list is empty, so the campaign cannot be published yet."
+            : `${formatCount(selected.member_count)} people will receive this campaign.`}{" "}
+          <Link href="/audiences" className="underline underline-offset-4">
+            Manage lists
+          </Link>
         </p>
       ) : null}
-
-      <ul className="space-y-3">
-        {values.recipients.map((recipient, index) => (
-          <BuilderRecipientRow
-            key={index}
-            index={index}
-            recipient={recipient}
-            errors={errors}
-            removable={isList && values.recipients.length > 1}
-            onChange={setRecipient}
-            onRemove={removeRecipient}
-            onBlur={revalidate}
-          />
-        ))}
-      </ul>
-
-      <Button type="button" variant="outline" size="lg" onClick={addRecipient}>
-        <PlusIcon data-icon="inline-start" />
-        Add recipient
-      </Button>
     </>
   );
 }

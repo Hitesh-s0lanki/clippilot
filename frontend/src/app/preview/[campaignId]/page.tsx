@@ -21,6 +21,11 @@ export const metadata: Metadata = {
 type Outcome =
   { ok: true; preview: CampaignPreview } | { ok: false; reason: PreviewUnavailableReason };
 
+/** A repeated query parameter is a malformed link, not two answers - take the first. */
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /**
  * Resolves the failures a recipient can legitimately hit, and only those.
  *
@@ -29,9 +34,9 @@ type Outcome =
  * renders in the recipient's own language; anything else is a real outage and
  * belongs to the error boundary.
  */
-async function loadPreview(campaignId: string, recipientId?: string): Promise<Outcome> {
+async function loadPreview(campaignId: string, memberId?: string, adId?: string): Promise<Outcome> {
   try {
-    return { ok: true, preview: await getPublicPreview(campaignId, recipientId) };
+    return { ok: true, preview: await getPublicPreview(campaignId, memberId, undefined, adId) };
   } catch (error) {
     if (!isApiError(error)) throw error;
     if (error.status === 403) return { ok: false, reason: "not-live" };
@@ -46,12 +51,9 @@ export default async function PublicPreviewPage({
   searchParams,
 }: PageProps<"/preview/[campaignId]">) {
   const { campaignId } = await params;
-  const { recipient_id: recipientId } = await searchParams;
+  const query = await searchParams;
 
-  const outcome = await loadPreview(
-    campaignId,
-    typeof recipientId === "string" ? recipientId : undefined,
-  );
+  const outcome = await loadPreview(campaignId, first(query.member_id), first(query.ad_id));
 
   if (!outcome.ok) {
     return (

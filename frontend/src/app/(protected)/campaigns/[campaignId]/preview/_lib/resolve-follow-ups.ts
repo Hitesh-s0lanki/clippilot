@@ -15,11 +15,15 @@ import { resolveVariables } from "../../../_lib/personalisation";
 export function resolveFollowUps(
   campaign: Campaign,
   customerName: string,
+  adId?: string,
 ): Record<string, FollowUp> {
   const context = { customerName, campaignName: campaign.name };
+  // Match the ad the preview is actually rendering. Defaulting to the first
+  // would hand back another creative's follow-ups once a campaign has several.
+  const ad = campaign.ads.find((candidate) => candidate.id === adId) ?? campaign.ads[0];
 
   return Object.fromEntries(
-    (campaign.experience?.options ?? []).map((option) => [
+    (ad?.options ?? []).map((option) => [
       option.id,
       {
         follow_up_type: option.follow_up_type,

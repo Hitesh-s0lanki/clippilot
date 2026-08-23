@@ -5,7 +5,27 @@ from datetime import date, datetime
 from pydantic import Field
 
 from src.schemas.common import PrimaryMetric, StrictModel
-from src.schemas.enums import OptionIntent
+from src.schemas.enums import AdStatus, OptionIntent
+
+
+class AdBreakdown(StrictModel):
+    """Per-ad rollup.
+
+    A row for every ad the campaign owns, including ones with no activity, for
+    the same reason ``OptionBreakdown`` returns zero-click rows.
+    """
+
+    ad_id: str
+    name: str
+    status: AdStatus
+    views: int = 0
+    interactions: int = 0
+    interaction_rate: float = Field(
+        0.0, ge=0.0, description="interactions / views for this ad. 0 when views is 0."
+    )
+    share_of_views: float = Field(
+        0.0, ge=0.0, le=1.0, description="This ad's share of the campaign's views."
+    )
 
 
 class OptionBreakdown(StrictModel):
@@ -16,6 +36,7 @@ class OptionBreakdown(StrictModel):
     """
 
     option_id: str
+    ad_id: str
     position: int
     key: str
     label: str
@@ -43,6 +64,7 @@ class CampaignAnalytics(StrictModel):
     )
     unique_viewers: int = 0
 
+    by_ad: list[AdBreakdown] = Field(default_factory=list)
     by_option: list[OptionBreakdown] = Field(default_factory=list)
     primary_metric: PrimaryMetric | None = None
 

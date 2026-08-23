@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -16,7 +17,7 @@ from src.core.database import Base
 from src.models.mixins import TimestampMixin, UUIDPrimaryKey
 from src.models.types import UTCDateTime
 from src.schemas.enums import (
-    AudienceType,
+    AdStatus,
     BudgetType,
     CampaignObjective,
     CampaignStatus,
@@ -75,29 +76,29 @@ class Campaign(UUIDPrimaryKey, TimestampMixin, Base):
     utm_content: Mapped[str | None] = mapped_column(String(80))
     external_ref: Mapped[str | None] = mapped_column(String(120), index=True)
 
-    # Audience
-    audience_type: Mapped[str] = mapped_column(
-        String(16), nullable=False, default=AudienceType.SINGLE.value
+    # Audience - a reference to a reusable list, not a private copy of one.
+    # SET NULL rather than CASCADE: deleting a list must never delete the
+    # campaigns that once used it, or their analytics. The campaign simply
+    # falls back to unpublishable until another audience is selected.
+    audience_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("audiences.id", ondelete="SET NULL"), index=True
     )
 
     # Lifecycle
     published_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
-    experiences = relationship(
-        "Experience",
+    ads = relationship(
+        "Ad",
         back_populates="campaign",
         cascade="all, delete-orphan",
         lazy="selectin",
-        order_by="Experience.created_at",
+        order_by="Ad.created_at",
     )
-    recipients = relationship(
-        "Recipient",
-        back_populates="campaign",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-        order_by="Recipient.created_at",
-    )
+    # Eager, and deliberately so: `member_count` is read on every campaign
+    # read to decide whether the campaign can be published, and a lazy load
+    # there would be an implicit query outside the async context.
+    audience = relationship("Audience", back_populates="campaigns", lazy="selectin")
     events = relationship(
         "CampaignEvent",
         back_populates="campaign",
@@ -135,10 +136,23 @@ class Campaign(UUIDPrimaryKey, TimestampMixin, Base):
     )
 
     @property
-    def experience(self):
-        """The single experience this campaign owns, if any.
+    def primary_ad(self):
+        """The ad a viewer sees when they open the campaign without naming one.
 
-        The schema permits many for future A/B testing; every code path today
-        works with the first.
+        The first ad that could actually be delivered - switched on, and
+        complete - falling back to the first ad of any kind so that the
+        builder's own preview still renders a half-built draft.
         """
-        return self.experiences[0] if self.experiences else None
+        if not self.ads:
+            return None
+
+        for ad in self.ads:
+            if ad.status == AdStatus.ACTIVE.value and ad.is_complete:
+                return ad
+
+        return self.ads[0]
+
+    @property
+    def live_ads(self) -> list:
+        """Every ad that is switched on and complete, in creation order."""
+        return [ad for ad in self.ads if ad.status == AdStatus.ACTIVE.value and ad.is_complete]

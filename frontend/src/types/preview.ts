@@ -8,7 +8,7 @@
  * the response they did not choose.
  */
 
-import type { FollowUpType, SpecialCategory } from "./campaign";
+import type { CallToAction, FollowUpType, SpecialCategory } from "./campaign";
 
 export interface PreviewOption {
   id: string;
@@ -17,14 +17,17 @@ export interface PreviewOption {
   label: string;
 }
 
-export interface PreviewExperience {
+export interface PreviewAd {
   id: string;
   video_url: string;
   poster_url: string | null;
   captions_url: string | null;
   headline: string | null;
+  /** Supporting line beneath the headline. Already resolved. */
+  description: string | null;
   /** Already resolved - `{{customer_name}}` is substituted server-side. */
   personalised_message: string;
+  cta: CallToAction;
   options: PreviewOption[];
 }
 
@@ -36,10 +39,11 @@ export interface PreviewCompliance {
 export interface CampaignPreview {
   campaign_id: string;
   campaign_name: string;
-  /** Falls back to `there` when the recipient has no name. */
+  /** Falls back to `there` when the link names nobody. */
   customer_name: string;
-  recipient_id: string | null;
-  experience: PreviewExperience;
+  member_id: string | null;
+  /** The one creative this link opens. Chosen by `ad_id`, or the primary ad. */
+  ad: PreviewAd;
   compliance: PreviewCompliance;
   /** Variables the resolver could not fill; left literal, never blanked. */
   unresolved_variables: string[];
@@ -51,6 +55,7 @@ export interface PreviewEvent {
   id: string;
   type: EventType;
   session_id: string;
+  ad_id: string | null;
   option_id: string | null;
   occurred_at: string;
   /** `true` when this session had already recorded the event. Not an error. */

@@ -32,7 +32,7 @@
 - [ ] `EXT·2` Objective shown on the card
 - [ ] `EXT·2` Effective status badge (Draft / Scheduled / Active / Paused / Completed)
 - [ ] `EXT·2` Schedule window shown
-- [ ] `EXT·2` Recipient count shown
+- [ ] `EXT·2` Audience name and size shown
 - [ ] `EXT·2` Compliance chip when a special category is set
 - [ ] `EXT·2` Objective-driven primary metric leads the card
 - [ ] `EXT·3` Status / objective filters and name search
@@ -42,7 +42,7 @@
 
 - [ ] Campaign name field
 - [ ] Video URL field
-- [ ] Customer name field
+- [ ] Audience selected from the account's lists
 - [ ] Personalised message field with `{{customer_name}}` support
 - [ ] Option 1: label + follow-up response
 - [ ] Option 2: label + follow-up response
@@ -63,7 +63,10 @@
 - [ ] `EXT·3` Send caps, pacing, frequency cap
 - [ ] `EXT·3` UTM + external reference fields
 - [ ] `EXT·3` Poster URL, headline, captions URL
-- [ ] `EXT·3` Multi-recipient list / CSV upload
+- [ ] `EXT·3` CSV upload, with every skipped row named
+- [ ] `EXT·3` Segment breakdown by age group, gender, city and country
+- [ ] `EXT·3` Member filters that combine, each one a shareable URL
+- [ ] `EXT·3` Sample audiences provisioned per account, so every user lands on real data
 
 ## Preview
 
@@ -78,7 +81,7 @@
 - [ ] `EXT·2` Non-active campaigns blocked with `403 CAMPAIGN_NOT_LIVE`
 - [ ] `EXT·2` Missing customer name falls back to `there`
 - [ ] `EXT·2` Resolved values HTML-escaped on render
-- [ ] `EXT·3` Recipient selector for multi-recipient campaigns
+- [ ] `EXT·3` Member selector, so the preview can be checked as any one of them
 - [ ] `EXT·3` UTM params appended to follow-up URLs
 
 ## Analytics
@@ -113,7 +116,7 @@
 - [ ] Malformed and duplicate event protection
 - [ ] Real database (not in-memory)
 - [ ] Options stored as **rows**, not `option_1_*` / `option_2_*` columns
-- [ ] Recipients stored as **rows**; the single-customer case is a one-row list
+- [ ] Audience is a **top-level, reusable** entity; the single-customer case is a list of one
 - [ ] Partial unique indexes enforce event dedup at the database level
 - [ ] Duplicate event returns `200` + `"deduplicated": true`, not `409`
 - [ ] `details` is always an array in the error envelope
@@ -127,7 +130,7 @@
 - [ ] `EXT·2` Stable option `key` survives label edits
 - [ ] `EXT·3` Duplicate campaign endpoint
 - [ ] `EXT·3` Archive (soft delete) endpoint
-- [ ] `EXT·3` Recipient management endpoints
+- [ ] `EXT·3` Audience endpoints: CRUD, filtered members, segment breakdown, bulk import
 - [ ] `EXT·3` Resolved-preview endpoint
 - [ ] `EXT·3` Money stored as integer minor units + currency
 
@@ -153,7 +156,7 @@
 - [ ] README: features completed / not completed
 - [ ] README: known limitations and next steps
 - [ ] README: states what is *designed but not built* — send execution, multi-tenancy,
-      auth, A/B experiences, scheduler
+      auth, scheduler
 - [ ] README: AI tools disclosure
 - [ ] Screen recording of the full flow
 - [ ] Total time spent stated

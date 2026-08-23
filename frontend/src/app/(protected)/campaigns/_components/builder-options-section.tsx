@@ -1,14 +1,14 @@
 "use client";
 
-import type { CampaignForm } from "../_hooks/use-campaign-form";
+import type { AdForm } from "../_hooks/use-ad-form";
 import { BuilderOptionFields } from "./builder-option-fields";
 
 export interface BuilderOptionsSectionProps {
-  form: CampaignForm;
+  form: AdForm;
 }
 
 /**
- * Section 4 - the two response options.
+ * The ad's two response options.
  *
  * Exactly two, fixed: the brief's interaction is a binary choice, and the
  * publish contract rejects any other count. There is no add or remove here on
@@ -19,9 +19,9 @@ export function BuilderOptionsSection({ form }: BuilderOptionsSectionProps) {
 
   return (
     <>
-      {errors["experience.options"] ? (
+      {errors["options"] ? (
         <p role="alert" className="text-sm font-medium text-destructive">
-          {errors["experience.options"]}
+          {errors["options"]}
         </p>
       ) : null}
 

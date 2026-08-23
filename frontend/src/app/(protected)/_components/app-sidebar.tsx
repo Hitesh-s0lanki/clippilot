@@ -1,32 +1,42 @@
+import { Suspense } from "react";
+
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
+  SidebarMenu,
   SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
 import { AppSidebarBrand } from "./app-sidebar-brand";
-import { AppSidebarNav } from "./app-sidebar-nav";
+import { AppSidebarCampaigns } from "./app-sidebar-campaigns";
+import { AppSidebarCampaignsSkeleton } from "./app-sidebar-campaigns-skeleton";
+import { AppSidebarAudienceLink } from "./app-sidebar-audience-link";
+import { AppSidebarOverviewLink } from "./app-sidebar-overview-link";
 import { AppSidebarUser } from "./app-sidebar-user";
 
 /**
  * The console's navigation rail.
  *
- * Three bands, top to bottom: what the product is, where you can go, and who
- * you are. That order is the whole point of moving navigation out of the top
- * bar - a horizontal strip has to compress those three jobs into one line and
- * ends up doing none of them well, while a rail gives each its own region and
- * still leaves the full page width for the screen itself.
+ * Grouped by what the row is about. "Console" is the work: the portfolio
+ * overview, then the campaigns by name. "Audience" is who the work is aimed
+ * at - a separate band because a list outlives any one campaign and is reached
+ * on its own terms, not through one.
  *
  * `collapsible="icon"` rather than `offcanvas`: on a wide screen the rail
  * should be able to shrink to icons and give the content room back, without
  * disappearing entirely and leaving no visible way to navigate. Below the
  * mobile breakpoint shadcn swaps it for a sheet regardless.
  *
- * A Server Component - only the two pieces that need the current path or the
- * session are clients.
+ * The campaign branch is the only data-backed one, and it streams inside its
+ * own `Suspense` boundary so a slow list never delays the brand, the fixed
+ * links or the account row. A Server Component - only the pieces that need the
+ * current path or the session are clients.
  */
 export function AppSidebar() {
   return (
@@ -41,10 +51,26 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <AppSidebarNav group="console" />
-        {/* Pushed to the bottom: the way out of the console, not a peer of the
-            destinations inside it. */}
-        <AppSidebarNav group="more" className="mt-auto" />
+        <SidebarGroup>
+          <SidebarGroupLabel>Console</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <AppSidebarOverviewLink />
+              <Suspense fallback={<AppSidebarCampaignsSkeleton />}>
+                <AppSidebarCampaigns />
+              </Suspense>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Audience</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <AppSidebarAudienceLink />
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarSeparator className="mx-0" />

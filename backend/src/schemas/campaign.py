@@ -9,6 +9,8 @@ from datetime import datetime
 
 from pydantic import Field, field_validator
 
+from src.schemas.ad import MAX_ADS_PER_CAMPAIGN, AdInput, AdRead
+from src.schemas.audience import AudienceSelection
 from src.schemas.common import (
     Budget,
     CampaignMetrics,
@@ -19,14 +21,11 @@ from src.schemas.common import (
     Tracking,
 )
 from src.schemas.enums import (
-    AudienceType,
     CampaignBadge,
     CampaignObjective,
     CampaignStatus,
     EffectiveStatus,
 )
-from src.schemas.experience import ExperienceInput, ExperienceRead
-from src.schemas.recipient import Audience, RecipientInput
 from src.schemas.validators import clean_text
 
 
@@ -36,7 +35,13 @@ class CampaignCreate(StrictModel):
     name: str = Field(..., min_length=1, max_length=120)
     description: str | None = Field(None, max_length=500)
     objective: CampaignObjective = CampaignObjective.ENGAGEMENT
-    audience_type: AudienceType = AudienceType.SINGLE
+    audience_id: str | None = Field(
+        None,
+        description=(
+            "The audience this campaign targets. Optional on a draft, required "
+            "to publish. Audiences are created and populated on /audiences."
+        ),
+    )
 
     schedule: Schedule = Field(default_factory=Schedule)
     budget: Budget = Field(default_factory=Budget)
@@ -44,8 +49,14 @@ class CampaignCreate(StrictModel):
     compliance: Compliance = Field(default_factory=Compliance)
     tracking: Tracking = Field(default_factory=Tracking)
 
-    experience: ExperienceInput = Field(default_factory=ExperienceInput)
-    recipients: list[RecipientInput] = Field(default_factory=list, max_length=1000)
+    ads: list[AdInput] = Field(
+        default_factory=list,
+        max_length=MAX_ADS_PER_CAMPAIGN,
+        description=(
+            "Ads to create alongside the campaign. Optional: the builder creates the "
+            "campaign first and adds creatives on its own screen. Names are unique within it."
+        ),
+    )
 
     @field_validator("name", "description")
     @classmethod
@@ -63,7 +74,9 @@ class CampaignUpdate(StrictModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     description: str | None = Field(None, max_length=500)
     objective: CampaignObjective | None = None
-    audience_type: AudienceType | None = None
+    audience_id: str | None = Field(
+        None, description="Point the campaign at a different audience, or null to clear it."
+    )
 
     schedule: Schedule | None = None
     budget: Budget | None = None
@@ -71,8 +84,11 @@ class CampaignUpdate(StrictModel):
     compliance: Compliance | None = None
     tracking: Tracking | None = None
 
-    experience: ExperienceInput | None = None
-    recipients: list[RecipientInput] | None = Field(None, max_length=1000)
+    # `ads` is absent on purpose. Once a campaign owns several of them,
+    # replacing the whole list by index on every campaign PATCH is a footgun -
+    # ads are created, edited and paused through /campaigns/{id}/ads. People
+    # are absent for the same reason: an audience is a shared list edited on
+    # /audiences, not a column of this campaign.
 
     @field_validator("name", "description")
     @classmethod
@@ -87,7 +103,7 @@ class StatusChange(StrictModel):
 
 
 class CampaignListItem(StrictModel):
-    """Dashboard row. Omits recipients, options and description."""
+    """Dashboard row. Omits ads, description and the audience breakdown."""
 
     id: str
     name: str
@@ -95,8 +111,11 @@ class CampaignListItem(StrictModel):
     status: CampaignStatus
     effective_status: EffectiveStatus
     badge: CampaignBadge
-    poster_url: str | None = None
-    recipient_count: int = 0
+    poster_url: str | None = Field(None, description="Poster of the campaign's primary ad.")
+    ad_count: int = 0
+    live_ad_count: int = Field(0, description="Ads that are switched on and complete.")
+    audience_name: str | None = Field(None, description="Null until an audience is selected.")
+    audience_size: int = Field(0, description="People in the selected audience.")
     metrics: CampaignMetrics = Field(default_factory=CampaignMetrics)
     created_at: datetime
     updated_at: datetime
@@ -120,8 +139,10 @@ class CampaignRead(StrictModel):
     delivery: Delivery
     compliance: Compliance
     tracking: Tracking
-    audience: Audience
-    experience: ExperienceRead | None = None
+    audience: AudienceSelection | None = Field(
+        None, description="The list this campaign targets. Null until one is selected."
+    )
+    ads: list[AdRead] = Field(default_factory=list)
     metrics: CampaignMetrics = Field(default_factory=CampaignMetrics)
 
     # Publish-readiness, so the builder can disable the Publish button and show

@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3Icon, PencilIcon, PlayCircleIcon } from "lucide-react";
+import { BarChart3Icon, LayersIcon, PencilIcon, PlayCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,12 +12,18 @@ export interface CampaignTabsProps {
 
 const TABS = [
   { segment: "edit", label: "Builder", Icon: PencilIcon },
+  { segment: "ads", label: "Ads", Icon: LayersIcon },
   { segment: "preview", label: "Preview", Icon: PlayCircleIcon },
   { segment: "analytics", label: "Analytics", Icon: BarChart3Icon },
 ] as const;
 
 /**
- * The three views of one campaign.
+ * The four views of one campaign.
+ *
+ * The audience is deliberately not among them. It is account-level and shared
+ * by any number of campaigns, so editing it from inside one would quietly edit
+ * it for the rest - the builder selects a list, and the list is managed on its
+ * own screen.
  *
  * Links rather than a tab widget: each view is a real URL that can be shared
  * and returned to, and the browser's back button should move between them.

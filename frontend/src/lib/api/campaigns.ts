@@ -6,6 +6,7 @@ import type {
   Campaign,
   CampaignPage,
   CampaignStatus,
+  CampaignUpdatePayload,
   CampaignWritePayload,
 } from "@/types/campaign";
 import type { CampaignPreview } from "@/types/preview";
@@ -65,9 +66,12 @@ export async function createCampaign(payload: CampaignWritePayload): Promise<Cam
   return api.post<Campaign>("/campaigns", { body: payload, token: await getSessionToken() });
 }
 
+/**
+ * Update the campaign itself. Its ads are updated through `@/lib/api/ads`.
+ */
 export async function updateCampaign(
   campaignId: string,
-  payload: Partial<CampaignWritePayload>,
+  payload: CampaignUpdatePayload,
 ): Promise<Campaign> {
   return api.patch<Campaign>(`/campaigns/${campaignId}`, {
     body: payload,
@@ -97,15 +101,16 @@ export async function deleteCampaign(campaignId: string): Promise<void> {
 }
 
 /**
- * The owner's own preview of a campaign at any status.
+ * The owner's own preview of one ad, at any status.
  *
- * The recipient-facing route is gated on `ACTIVE`; this one is scoped to the
- * owner instead, so a draft stays testable before it is published.
+ * The recipient-facing route is gated on both the campaign and the ad being
+ * live; this one is scoped to the owner instead, so a draft ad stays testable
+ * before it is switched on. Without `adId` the campaign's primary ad is used.
  */
 export const getOwnerPreview = cache(
-  async (campaignId: string, recipientId?: string): Promise<CampaignPreview> => {
+  async (campaignId: string, memberId?: string, adId?: string): Promise<CampaignPreview> => {
     return api.get<CampaignPreview>(`/campaigns/${campaignId}/preview`, {
-      query: { recipient_id: recipientId },
+      query: { member_id: memberId, ad_id: adId },
       token: await getSessionToken(),
       cache: "no-store",
     });

@@ -14,7 +14,7 @@ src/controllers/           HTTP in / HTTP out. No business rules.
 src/app/dependencies.py    injects the Clerk user, a DB session and services
     ↓
 src/services/              business logic. No FastAPI, no SQLAlchemy.
-    ↓
+    ↓                          ↘ src/agents/  LangChain agents (prompts, MCP tools, the loop)
 src/repositories/          the only modules that build SQL
     ↓
 src/models/                SQLAlchemy ORM — five tables
@@ -40,9 +40,9 @@ shape is nested and read-optimised, the tables are flat and normalised.
 | `validators.py` | `clean_text`, `slugify`, `validate_https_url`, `validate_video_url` | https-only, blocks localhost/private ranges (SSRF), rejects control characters |
 | `common.py` | `Schedule`, `Budget`, `Delivery`, `Compliance`, `Tracking`, `CampaignMetrics`, `StrictModel` | `StrictModel` forbids unknown keys, so a payload typo is an error not a silent no-op |
 | `campaign.py` | `CampaignCreate`, `CampaignUpdate`, `CampaignRead`, `CampaignListItem`, `CampaignPage`, `StatusChange` | Write schemas carry only user-controlled fields |
-| `experience.py` | `ExperienceInput`, `ExperienceRead`, `ExperiencePublic` | `*Public` is the recipient-safe variant |
+| `ad.py` | `AdInput`, `AdUpdate`, `AdRead`, `AdPublic`, `AdList`, `AdStatusChange` | `*Public` is the recipient-safe variant |
 | `option.py` | `OptionInput`, `OptionRead`, `OptionPublic` | `OptionPublic` omits the follow-up so a recipient cannot read the outcome they did not choose |
-| `recipient.py` | `RecipientInput`, `RecipientRead`, `Audience` | |
+| `audience.py` | `AudienceMemberInput/Read`, `AudienceCreate/Update/Read`, `AudienceSegments`, `AudienceSelection` | An audience is account-level; a campaign carries only `AudienceSelection` |
 | `event.py` | `ViewEventCreate`, `ResponseEventCreate`, `EventRead`, `ResponseResult` | |
 | `analytics.py` | `CampaignAnalytics`, `OptionBreakdown`, `TimeseriesPoint` | |
 | `preview.py` | `CampaignPreview`, `PreviewCompliance` | Built from an explicit allow-list — the only unauthenticated response |
@@ -64,9 +64,9 @@ Five tables, every child cascading from `campaigns`.
 | File | Table | Key points |
 | --- | --- | --- |
 | `campaign.py` | `campaigns` | Aggregate root. `owner_user_id` = Clerk user id |
-| `experience.py` | `campaign_experiences`, `campaign_options` | Options are **rows**, not `option_1_*` columns |
-| `recipient.py` | `campaign_recipients` | Single-customer case is a one-row list |
-| `event.py` | `campaign_events` | `campaign_id` denormalised so analytics never joins through experiences |
+| `ad.py` | `campaign_ads`, `ad_options` | A campaign owns many ads, each with its own status. Options are **rows**, not `option_1_*` columns |
+| `audience.py` | `audiences`, `audience_members` | A reusable list any number of campaigns select. The single-customer case is an audience of one |
+| `event.py` | `campaign_events` | `campaign_id` denormalised so analytics never joins through ads; `ad_id` is SET NULL so deleting a creative keeps the campaign's history |
 | `types.py` | — | `UTCDateTime`: SQLite returns naive datetimes, Postgres aware ones; this normalises both |
 | `mixins.py` | — | `UUIDPrimaryKey` (CHAR(36), identical on both engines), `TimestampMixin` |
 
@@ -77,7 +77,8 @@ Five tables, every child cascading from `campaigns`.
 | `uniq_campaign_owner_name` on `(owner_user_id, lower(name))` | Case-insensitive name uniqueness **per Clerk user** |
 | `uniq_view_per_session` — partial, `type='VIEW'` | One view per session |
 | `uniq_response_per_session` — partial, `type='RESPONSE'` | One response per session |
-| `uniq_option_position` on `(experience_id, position)` | Exactly one option per slot |
+| `uniq_option_position` on `(ad_id, position)` | Exactly one option per slot |
+| `uniq_ad_name_per_campaign` on `(campaign_id, lower(name))` | Ad names unique within their campaign |
 | `idx_events_campaign_type` | Analytics aggregation |
 
 Duplicate protection lives in the **database**, not just the service, so two concurrent
@@ -87,7 +88,7 @@ requests cannot both insert. Partial indexes behave identically on SQLite and Po
 
 Postgres is the deployment target, over `asyncpg`. Schema choices that assume it:
 
-- `JSONB` for `campaign_recipients.attributes` (plain `JSON` on SQLite via a dialect variant)
+- `JSONB` for `audience_members.attributes` (plain `JSON` on SQLite via a dialect variant)
 - Partial unique indexes for event deduplication
 - A functional unique index on `(owner_user_id, lower(name))`
 - Money as `BIGINT` minor units — never a float
@@ -113,11 +114,16 @@ handler turns it into the response envelope.
 | File | Owns |
 | --- | --- |
 | `campaign_service.py` | Create, partial update, lifecycle transitions, name conflicts, audience rules |
+| `ad_service.py` | Ad CRUD and per-ad lifecycle. An ad delivers only when it *and* its campaign are live |
+| `ad_builder.py` | Applying an ad payload, and reconciling its options by position |
 | `event_service.py` | View/response recording, deduplication, follow-up resolution, IP hashing |
 | `analytics_service.py` | Aggregation — views, interactions, rate, per-option split, primary metric |
-| `preview_service.py` | Recipient-facing render with personalisation resolved |
+| `preview_service.py` | Recipient-facing render with personalisation resolved, for one ad |
+| `audience_service.py` | Audience CRUD, bulk member import with per-row skips, segment breakdowns, sample provisioning |
+| `sample_audience.py` | The three sample lists a new account starts with. One definition, used by the API and the seed script |
 | `personalisation.py` | `{{customer_name}}` substitution |
-| `status_service.py` | `effective_status`, dashboard `badge`, legal transitions |
+| `status_service.py` | `effective_status` for campaigns **and** ads, dashboard `badge`, legal transitions |
+| `agent_service.py` | Whether agents are enabled, name → agent, payload validation, the run envelope. See [Agents](agents.md) |
 | `publish_validator.py` | The publish contract → a list of `Blocker`s |
 | `mappers.py` | ORM → wire schema, in one place |
 | `validators_utm.py` | UTM append; params already on the destination win |
@@ -233,7 +239,7 @@ Every failure — validation, HTTP, or unexpected — returns one shape:
     "code": "VALIDATION_ERROR",
     "message": "The campaign cannot be published.",
     "details": [
-      { "field": "experience.video_url", "code": "REQUIRED", "message": "A video URL is required before publishing." }
+      { "field": "ads.0.video_url", "code": "REQUIRED", "message": "A video URL is required before publishing." }
     ]
   }
 }

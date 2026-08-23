@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # by Settings.validate_runtime().
     allow_dev_auth_header: bool = True
 
+    # Give an account with no audiences the three sample lists on its first
+    # visit, so a new sign-in lands on a populated segment breakdown rather
+    # than an empty screen. Demo behaviour - turn it off for a real tenant that
+    # should start clean.
+    sample_audiences: bool = True
+
     # Salt for hashing event IP addresses. Raw IPs are never stored.
     ip_hash_salt: str = "dev-only-change-me"
 

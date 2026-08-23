@@ -15,9 +15,13 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic.script import ScriptDirectory
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect
+from sqlalchemy.engine import Connection
 
 from src.app.errors import register_exception_handlers
 from src.app.router import api_router, root_router
@@ -26,6 +30,43 @@ from src.core.database import Base, build_engine, build_session_factory
 from src.models import *  # noqa: F401,F403 - populates Base.metadata
 
 logger = logging.getLogger("clippilot")
+
+# Where the revision history lives, resolved from this file so it is found
+# whatever the working directory is.
+MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+
+
+def _prepare_sqlite_schema(connection: Connection) -> None:
+    """Create the schema for a fresh SQLite file, or refuse to guess.
+
+    ``create_all`` is not a migration, and on a database Alembic already owns
+    it does something worse than nothing: it adds the tables that are missing
+    and silently leaves the existing ones alone. A run against a database
+    stamped at an older revision therefore produces a hybrid - new tables,
+    empty, beside old tables holding the data, and an existing table missing
+    the column the ORM now expects. The first query then fails with
+    ``no such column``, a long way from the cause.
+
+    So: a file with no ``alembic_version`` is a fresh one and is created from
+    the metadata. A file Alembic has stamped is migration-managed, and if it is
+    behind we say so and stop rather than half-fixing it.
+    """
+    inspector = inspect(connection)
+
+    if "alembic_version" not in inspector.get_table_names():
+        Base.metadata.create_all(connection)
+        return
+
+    stamped = connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar()
+    head = ScriptDirectory(str(MIGRATIONS_DIR)).get_current_head()
+
+    if stamped != head:
+        raise RuntimeError(
+            f"This SQLite database is at migration {stamped!r} but the code expects "
+            f"{head!r}. Run `uv run alembic upgrade head`, or delete the file to start "
+            f"from an empty one. Creating the missing tables here would leave the "
+            f"database half-migrated."
+        )
 
 
 @asynccontextmanager
@@ -50,7 +91,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # limited to SQLite, which is only used for local development and tests.
     if settings.database_url.startswith("sqlite"):
         async with engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(_prepare_sqlite_schema)
 
     try:
         yield

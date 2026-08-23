@@ -11,8 +11,15 @@ import { BuilderField } from "./builder-field";
 export interface BuilderMessageFieldProps {
   value: string;
   error?: string;
-  /** The first recipient's name, so the preview shows what they will read. */
-  customerName: string;
+  /**
+   * A name to render the live preview against.
+   *
+   * Optional: the ad form does not know who is in the audience, so with no
+   * name the preview shows the same neutral fallback a member with no name
+   * would see, which is the honest thing to show.
+   */
+  customerName?: string;
+  /** Resolves {{campaign_name}} in the preview. */
   campaignName: string;
   onChange: (value: string) => void;
   onBlur: () => void;
@@ -25,15 +32,14 @@ const VARIABLE = "{{customer_name}}";
  *
  * The variable is the one piece of syntax the brief puts in front of a user,
  * and a template language nobody can see the output of is a template language
- * people get wrong. The preview underneath resolves it against the first
- * recipient, using the same rules the server will - including the fallback to
- * "there" for a nameless recipient, and leaving an unknown variable literal
- * rather than silently blanking it.
+ * people get wrong. The preview underneath resolves it using the same rules
+ * the server will - including the fallback to "there" when nobody is named,
+ * and leaving an unknown variable literal rather than silently blanking it.
  */
 export function BuilderMessageField({
   value,
   error,
-  customerName,
+  customerName = "",
   campaignName,
   onChange,
   onBlur,
@@ -42,7 +48,7 @@ export function BuilderMessageField({
 
   return (
     <BuilderField
-      field="experience.personalised_message"
+      field="ads.0.personalised_message"
       label="Personalised message"
       required
       error={error}
@@ -77,7 +83,7 @@ export function BuilderMessageField({
 
           <div className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2">
             <p className="text-xs font-medium text-muted-foreground">
-              Preview for {customerName.trim() || "a recipient with no name"}
+              Preview for {customerName.trim() || "someone in this audience"}
             </p>
             <p className="mt-1 leading-relaxed text-pretty">
               {resolved.text || <span className="text-muted-foreground">Nothing to show yet.</span>}

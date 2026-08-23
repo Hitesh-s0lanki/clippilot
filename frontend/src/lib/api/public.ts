@@ -13,11 +13,12 @@ import { api } from "./client";
 
 export function getPublicPreview(
   campaignId: string,
-  recipientId?: string | null,
+  memberId?: string | null,
   signal?: AbortSignal,
+  adId?: string | null,
 ): Promise<CampaignPreview> {
   return api.get<CampaignPreview>(`/public/campaigns/${campaignId}`, {
-    query: { recipient_id: recipientId ?? undefined },
+    query: { member_id: memberId ?? undefined, ad_id: adId ?? undefined },
     cache: "no-store",
     signal,
   });
@@ -27,17 +28,21 @@ export interface RecordEventInput {
   campaignId: string;
   /** Stable for one preview session. The server's deduplication key. */
   sessionId: string;
-  recipientId?: string | null;
+  /** Which creative was on screen. Without it the primary ad is assumed. */
+  adId?: string | null;
+  /** Who is watching. Without it the copy falls back to its neutral form. */
+  memberId?: string | null;
 }
 
 /** Idempotent per session: a repeat call returns the original event, not an error. */
 export function recordView({
   campaignId,
   sessionId,
-  recipientId,
+  adId,
+  memberId,
 }: RecordEventInput): Promise<PreviewEvent> {
   return api.post<PreviewEvent>(`/public/campaigns/${campaignId}/views`, {
-    body: { session_id: sessionId, recipient_id: recipientId ?? null },
+    body: { session_id: sessionId, ad_id: adId ?? null, member_id: memberId ?? null },
   });
 }
 
@@ -55,9 +60,15 @@ export function recordResponse({
   campaignId,
   sessionId,
   optionId,
-  recipientId,
+  adId,
+  memberId,
 }: RecordResponseInput): Promise<ResponseResult> {
   return api.post<ResponseResult>(`/public/campaigns/${campaignId}/responses`, {
-    body: { session_id: sessionId, option_id: optionId, recipient_id: recipientId ?? null },
+    body: {
+      session_id: sessionId,
+      option_id: optionId,
+      ad_id: adId ?? null,
+      member_id: memberId ?? null,
+    },
   });
 }

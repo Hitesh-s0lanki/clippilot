@@ -1,8 +1,4 @@
-import type {
-  CampaignFormValues,
-  OptionFormValues,
-  RecipientFormValues,
-} from "./campaign-form-values";
+import type { CampaignFormValues } from "./campaign-form-values";
 
 /**
  * Form state key -> the API's dotted field path.
@@ -22,14 +18,7 @@ export const FIELD_PATHS: Record<keyof CampaignFormValues, string> = {
   end_at: "schedule.end_at",
   timezone: "schedule.timezone",
 
-  audience_type: "audience_type",
-  recipients: "recipients",
-
-  video_url: "experience.video_url",
-  poster_url: "experience.poster_url",
-  headline: "experience.headline",
-  personalised_message: "experience.personalised_message",
-  options: "experience.options",
+  audience_id: "audience_id",
 
   special_category: "compliance.special_category",
   disclaimer_text: "compliance.disclaimer_text",
@@ -49,13 +38,3 @@ export const FIELD_PATHS: Record<keyof CampaignFormValues, string> = {
   utm_content: "tracking.utm_content",
   external_ref: "tracking.external_ref",
 };
-
-/** Options are addressed by position, matching the publish contract's paths. */
-export function optionFieldPaths(position: number, patch: Partial<OptionFormValues>): string[] {
-  return Object.keys(patch).map((key) => `experience.options.${position}.${key}`);
-}
-
-/** Recipients are addressed by index, matching Pydantic's list paths. */
-export function recipientFieldPaths(index: number, patch: Partial<RecipientFormValues>): string[] {
-  return Object.keys(patch).map((key) => `recipients.${index}.${key}`);
-}

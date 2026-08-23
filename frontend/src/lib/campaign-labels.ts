@@ -8,7 +8,8 @@
 
 import { formatCount, formatRate } from "@/lib/format";
 import type {
-  AudienceType,
+  AdEffectiveStatus,
+  AdStatus,
   BudgetType,
   CampaignMetrics,
   CampaignObjective,
@@ -34,6 +35,29 @@ export const OBJECTIVE_HINTS: Record<CampaignObjective, string> = {
   LEAD_CAPTURE: "Leads with positive-intent responses.",
   CONVERSION: "Leads with follow-up click-through.",
   RETENTION: "Leads with repeat views.",
+};
+
+export const AD_STATUS_LABELS: Record<AdStatus, string> = {
+  DRAFT: "Draft",
+  ACTIVE: "Live",
+  PAUSED: "Paused",
+  ARCHIVED: "Archived",
+};
+
+/**
+ * What an ad is actually doing, in words.
+ *
+ * `CAMPAIGN_PAUSED` is the one that earns its place: the ad is switched on and
+ * finished, and it still shows nothing, because the campaign above it is not
+ * running. Labelling that "Live" would be a lie the user cannot debug.
+ */
+export const AD_EFFECTIVE_STATUS_LABELS: Record<AdEffectiveStatus, string> = {
+  INCOMPLETE: "Incomplete",
+  DRAFT: "Draft",
+  ACTIVE: "Live",
+  PAUSED: "Paused",
+  ARCHIVED: "Archived",
+  CAMPAIGN_PAUSED: "Campaign not live",
 };
 
 export const INTENT_LABELS: Record<OptionIntent, string> = {
@@ -75,11 +99,6 @@ export const PACING_LABELS: Record<Pacing, string> = {
   ACCELERATED: "Accelerated",
 };
 
-export const AUDIENCE_TYPE_LABELS: Record<AudienceType, string> = {
-  SINGLE: "One recipient",
-  LIST: "Recipient list",
-};
-
 /**
  * The headline number, formatted for what it actually is.
  *
@@ -91,9 +110,9 @@ export function formatPrimaryMetric(metric: PrimaryMetric): string {
   return metric.key === "views" ? formatCount(metric.value) : formatRate(metric.value);
 }
 
-/** `2,500 recipients`, and the singular when there is exactly one. */
-export function formatRecipientCount(count: number): string {
-  return `${formatCount(count)} ${count === 1 ? "recipient" : "recipients"}`;
+/** `2,500 people`, and the singular when there is exactly one. */
+export function formatMemberCount(count: number): string {
+  return `${formatCount(count)} ${count === 1 ? "person" : "people"}`;
 }
 
 export interface LeadMetric {

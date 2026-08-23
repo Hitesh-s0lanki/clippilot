@@ -1,14 +1,13 @@
-import type { CampaignWritePayload, OptionInput, RecipientInput } from "@/types/campaign";
+import type { CampaignUpdatePayload, CampaignWritePayload } from "@/types/campaign";
 
-import type {
-  CampaignFormValues,
-  OptionFormValues,
-  RecipientFormValues,
-} from "./campaign-form-values";
+import type { CampaignFormValues } from "./campaign-form-values";
 import { fromScheduleInput } from "./schedule";
 
 /**
  * Form state -> the wire format.
+ *
+ * Campaign fields only. Creatives are their own resource with their own form
+ * and their own endpoints - see `ad-form-payload.ts`.
  *
  * The one place that knows the API's shape rules, so no component has to:
  * empty strings become `null` (an empty `email` fails validation, a missing one
@@ -33,41 +32,16 @@ export function toMinorUnits(value: string): number | null {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
 }
 
-function toOptionInput(option: OptionFormValues): OptionInput {
-  const isUrl = option.follow_up_type === "URL";
-
-  return {
-    position: option.position,
-    label: text(option.label),
-    intent: option.intent,
-    follow_up_type: option.follow_up_type,
-    follow_up_message: isUrl ? null : text(option.follow_up_message),
-    follow_up_url: isUrl ? text(option.follow_up_url) : null,
-  };
-}
-
-function toRecipientInput(recipient: RecipientFormValues): RecipientInput {
-  return {
-    customer_name: recipient.customer_name.trim(),
-    email: text(recipient.email),
-    phone: text(recipient.phone),
-    external_ref: text(recipient.external_ref),
-  };
-}
-
-export function formToPayload(values: CampaignFormValues): CampaignWritePayload {
-  // A single-recipient campaign is rejected server-side if it carries two, and
-  // rows the user left completely blank are not recipients at all.
-  const filled = values.recipients.filter((recipient) => recipient.customer_name.trim().length > 0);
-  const recipients = values.audience_type === "SINGLE" ? filled.slice(0, 1) : filled;
-
+export function formToCampaignPayload(values: CampaignFormValues): CampaignUpdatePayload {
   const budgetType = values.budget_type;
 
   return {
     name: values.name.trim(),
     description: text(values.description),
     objective: values.objective,
-    audience_type: values.audience_type,
+    // A reference, not a copy: the list itself is built and edited on its own
+    // screen, and several campaigns may point at the same one.
+    audience_id: text(values.audience_id),
 
     schedule: {
       start_at: fromScheduleInput(values.start_at),
@@ -101,15 +75,17 @@ export function formToPayload(values: CampaignFormValues): CampaignWritePayload 
       utm_content: text(values.utm_content),
       external_ref: text(values.external_ref),
     },
-
-    experience: {
-      video_url: text(values.video_url),
-      poster_url: text(values.poster_url),
-      headline: text(values.headline),
-      personalised_message: text(values.personalised_message),
-      options: values.options.map(toOptionInput),
-    },
-
-    recipients: recipients.map(toRecipientInput),
   };
+}
+
+/**
+ * The body for `POST /campaigns`.
+ *
+ * Carries no ads. The API accepts them inline, but the builder deliberately
+ * does not: a campaign is created first and taken to its ads screen, so the
+ * user is never asked to invent a creative before the campaign it belongs to
+ * exists.
+ */
+export function formToCreatePayload(values: CampaignFormValues): CampaignWritePayload {
+  return { ...formToCampaignPayload(values), ads: [] } as CampaignWritePayload;
 }

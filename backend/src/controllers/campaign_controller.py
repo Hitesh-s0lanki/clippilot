@@ -130,17 +130,19 @@ async def delete_campaign(
     response_model=CampaignPreview,
     summary="Preview a campaign as its owner",
     description=(
-        "Renders the campaign with personalisation resolved, at any status, so "
-        "a draft can be checked before publishing."
+        "Renders one ad with personalisation resolved, at any status, so a "
+        "draft can be checked before publishing. Without `ad_id` the campaign's "
+        "primary ad is used."
     ),
 )
 async def preview_as_owner(
     campaign_id: str,
     service: PreviewServiceDep,
     user: CurrentUserDep,
-    recipient_id: Annotated[str | None, Query()] = None,
+    ad_id: Annotated[str | None, Query(description="Which ad to render.")] = None,
+    member_id: Annotated[str | None, Query()] = None,
 ) -> CampaignPreview:
-    return await service.get_owner_preview(campaign_id, user.id, recipient_id=recipient_id)
+    return await service.get_owner_preview(campaign_id, user.id, ad_id=ad_id, member_id=member_id)
 
 
 @router.get(
