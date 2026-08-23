@@ -390,7 +390,124 @@ uv export --format requirements-txt --no-hashes --no-dev --no-emit-project -o re
 uv export --format requirements-txt --no-hashes --only-dev --no-emit-project -o requirements-dev.txt
 ```
 
-## Deployment
+## Docker
+
+[`Dockerfile`](Dockerfile) builds a two-stage image: the first stage resolves
+`uv.lock` into `/app/.venv`, the second carries only that virtualenv and the
+source. The result is ~106 MB, runs as uid 1001, and needs no `apt` packages -
+the `HEALTHCHECK` probes `/healthz` with `urllib` rather than `curl`.
+
+The build context is `backend/`, not the repository root:
+
+```bash
+docker build -t clippilot-backend ./backend
+
+docker run --rm -p 8000:8000 \
+  -e DATABASE_URL='postgresql+asyncpg://user:pass@host:5432/trustvid' \
+  -e IP_HASH_SALT="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
+  -e CLERK_JWKS_URL='https://your-app.clerk.accounts.dev/.well-known/jwks.json' \
+  -e CLERK_ISSUER='https://your-app.clerk.accounts.dev' \
+  clippilot-backend
+```
+
+`.env` is in [`.dockerignore`](.dockerignore) on purpose. Configuration reaches
+the container through the platform's environment; nothing is baked into the
+image.
+
+### Entrypoint
+
+[`scripts/docker-entrypoint.sh`](scripts/docker-entrypoint.sh) applies
+`alembic upgrade head` and then execs uvicorn. Anything you pass after the
+image name replaces that, so the same image is also the migration runner and
+the seed runner:
+
+```bash
+docker run --rm -e DATABASE_URL=... clippilot-backend alembic current
+docker run --rm -e DATABASE_URL=... clippilot-backend alembic upgrade head
+docker run --rm -e DATABASE_URL=... clippilot-backend python -m scripts.seed_audiences
+```
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `PORT` | `8000` | Port uvicorn binds. Platforms that inject their own are handled |
+| `HOST` | `0.0.0.0` | Bind address |
+| `WEB_CONCURRENCY` | `1` | uvicorn worker processes |
+| `RUN_MIGRATIONS` | `true` | Set `false` on the web process when the platform runs migrations as a separate release command |
+| `FORWARDED_ALLOW_IPS` | `*` | Which upstream proxies may set `X-Forwarded-For`. Events hash the client IP, so without `--proxy-headers` every request would hash the load balancer |
+
+The image ships with `ENVIRONMENT=production`, `DEBUG=false` and
+`ALLOW_DEV_AUTH_HEADER=false` already set, so a container that boots at all has
+passed `Settings.validate_runtime()`.
+
+### Local stack
+
+[`docker-compose.yml`](docker-compose.yml) pairs the image with PostgreSQL 17:
+
+```bash
+docker compose up --build        # http://localhost:8000/docs
+docker compose run --rm api alembic upgrade head
+docker compose down -v           # also drops the database volume
+```
+
+It reads `backend/.env` when the file exists and overrides `DATABASE_URL`,
+because inside the compose network the database host is `db`, not `localhost`.
+
+## Publishing and deploying
+
+[`.github/workflows/backend-docker.yml`](../.github/workflows/backend-docker.yml)
+runs on pushes to `main` and `release` that touch `backend/**`, and on manual
+dispatch. Correctness is `backend-ci.yml`'s job; this workflow's job is the
+artefact.
+
+| Job | What it does |
+| --- | --- |
+| `build` | Builds and pushes to `ghcr.io/<owner>/clippilot-backend`, tagged `sha-<commit>`, the branch name, plus `latest` on `main` and `prod` on `release`. Outputs a digest-pinned reference |
+| `verify` | Pulls that digest, boots it against a throwaway PostgreSQL with `ENVIRONMENT=production`, and asserts `/healthz` is `ok`, `/openapi.json` serves, migrations ran, and the process is not root |
+| `migrate` | Manual dispatch only. Runs `alembic upgrade head` against the `DATABASE_URL` secret, using the image just built |
+| `deploy` | Posts the verified digest to `RENDER_DEPLOY_HOOK_URL`. Skipped with a note in the run summary when that secret is absent |
+
+`verify` deliberately runs with `ENVIRONMENT=production` so
+`validate_runtime()` executes for real - a missing `IP_HASH_SALT` or Clerk
+issuer fails in CI rather than on the platform. Its `DATABASE_URL` is always
+the service container, never the secret, so a CI run cannot touch production
+data.
+
+### Repository secrets and variables
+
+Credentials are **secrets** (write-only, masked in logs); everything else is a
+**variable** (readable in the Actions UI, which is what you want for a bucket
+name). Every one of them has a harmless fallback in the workflow, so the
+pipeline is green on a repository where none are set yet and gets stricter as
+each is filled in.
+
+| Secret | Needed for |
+| --- | --- |
+| `DATABASE_URL` | The `migrate` job. Must be the pooled `postgresql+asyncpg://` URL - no `?sslmode=`, asyncpg rejects it |
+| `IP_HASH_SALT` | `verify`. Generate with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | The agents. Both empty disables `/agents` and nothing else |
+| `FIRECRAWL_API_KEY` | Agent web research. Absent means `researched=false`, not a failure |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 uploads. Omit both when the deployment uses an instance role |
+| `RENDER_DEPLOY_HOOK_URL` | The `deploy` job. Not in `.env` - copy it from the Render service |
+
+| Variable | Needed for |
+| --- | --- |
+| `CLERK_JWKS_URL`, `CLERK_ISSUER`, `CLERK_AUDIENCE` | Session verification |
+| `CORS_ORIGINS` | The deployed frontend origin, comma-separated |
+| `S3_BUCKET`, `S3_REGION`, `S3_KEY_PREFIX`, `S3_PUBLIC_BASE_URL` | Video uploads |
+| `AGENT_PROVIDER`, `AGENT_MODEL` | Pinning a provider or model |
+| `FIRECRAWL_MCP_URL` | The MCP endpoint |
+
+[`scripts/sync-github-secrets.sh`](scripts/sync-github-secrets.sh) pushes them
+from `.env` in one go. It never prints a value, skips anything empty, and
+refuses to push a placeholder - a `dev-only-change-me` salt or a SQLite
+`DATABASE_URL` would leave the workflow looking configured when it is not.
+
+```bash
+./scripts/sync-github-secrets.sh --dry-run   # names and lengths only
+./scripts/sync-github-secrets.sh             # push
+```
+
+### Without Docker
 
 Bind to the platform-provided port:
 
