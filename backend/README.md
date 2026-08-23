@@ -13,27 +13,39 @@ FastAPI service for the ClipPilot interactive video campaign builder.
 ```bash
 cd backend
 uv sync                 # creates .venv and installs runtime + dev dependencies
-cp .env.example .env    # then set DATABASE_URL
-createdb trustvid       # or point DATABASE_URL at an existing instance
+cp .env.example .env    # then set DATABASE_URL to the hosted instance
 uv run alembic upgrade head
 ```
 
 ### Database
 
-PostgreSQL is the deployment target, over the `asyncpg` driver:
+The database is a **hosted Neon PostgreSQL instance**, reached over the
+`asyncpg` driver. There is nothing to install and nothing to create - every
+environment points at that one instance.
+
+Neon hands out a URL that `asyncpg` cannot use as given, and both problems are
+quiet ones:
 
 ```
-DATABASE_URL=postgresql+asyncpg://trustvid:trustvid@localhost:5432/trustvid
+given:  postgresql://…@ep-xxx.<region>.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+use:    postgresql+asyncpg://…@ep-xxx.<region>.aws.neon.tech/neondb
 ```
 
-> **Managed Postgres (Neon, Supabase, RDS):** use the *pooled* connection string,
-> and delete any `?sslmode=...` parameter — `asyncpg` rejects it and negotiates
-> TLS on its own.
+`postgresql://` resolves to psycopg2, which is not installed, so the driver has
+to be named. `sslmode` and `channel_binding` make `asyncpg` raise `invalid
+connection option` rather than ignoring them - it negotiates TLS itself.
+[`scripts/sync-github-secrets.sh --database-url`](scripts/sync-github-secrets.sh)
+does both conversions for you. Prefer the `-pooler` host once concurrent
+connections matter.
 
 SQLite still works for a zero-setup run (`sqlite+aiosqlite:///./trustvid.db`) and is
 what the test suite uses by default, but every schema decision targets Postgres:
 `JSONB` for recipient attributes, partial unique indexes for event deduplication,
 and a functional unique index on `lower(name)`.
+
+> The test suite never reads `DATABASE_URL`. `tests/conftest.py` uses
+> `TEST_DATABASE_URL`, falling back to a temporary SQLite file, so its
+> `drop_all` cannot reach the hosted database however `.env` is set.
 
 ### Migrations
 
@@ -467,18 +479,22 @@ The image carries no configuration. At minimum a deployed service needs:
 `S3_*` and the agent keys are optional - uploads fall back to a pasted URL and
 the `/agents` endpoints switch off, while the rest of the API is unaffected.
 
-### Local stack
+### Running against the hosted database
 
-[`docker-compose.yml`](docker-compose.yml) pairs the image with PostgreSQL 17:
+There is no local database to stand up. The schema lives on Neon, and every
+environment - a container on your laptop, CI's migrate job, the deployed
+service - points at that one instance:
 
 ```bash
-docker compose up --build        # http://localhost:8000/docs
-docker compose run --rm api alembic upgrade head
-docker compose down -v           # also drops the database volume
+docker run --rm -p 8000:8000 --env-file .env clippilot-backend
 ```
 
-It reads `backend/.env` when the file exists and overrides `DATABASE_URL`,
-because inside the compose network the database host is `db`, not `localhost`.
+`--env-file .env` is safe here and only here: the file is in
+[`.dockerignore`](.dockerignore), so it is read at *run* time and never copied
+into the image.
+
+The container applies migrations on the way up, so a fresh Neon branch needs no
+separate setup step. Set `RUN_MIGRATIONS=false` if you would rather it did not.
 
 ## Publishing and deploying
 
@@ -496,9 +512,13 @@ artefact.
 
 `verify` deliberately runs with `ENVIRONMENT=production` so
 `validate_runtime()` executes for real - a missing `IP_HASH_SALT` or Clerk
-issuer fails in CI rather than on the platform. Its `DATABASE_URL` is always
-the service container, never the secret, so a CI run cannot touch production
-data.
+issuer fails in CI rather than on the platform.
+
+It stands up its own throwaway PostgreSQL rather than using the hosted
+instance, and that is not a leftover from a local setup. Two reasons: a run
+from a pull request branch could otherwise apply a bad migration to the live
+database, and `alembic upgrade head` against an already-migrated Neon proves
+nothing - only an empty database proves the migrations build the schema.
 
 ### Repository secrets and variables
 
