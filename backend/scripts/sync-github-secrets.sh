@@ -7,6 +7,11 @@
 #   ./scripts/sync-github-secrets.sh --dry-run     # names only, nothing sent
 #   ./scripts/sync-github-secrets.sh               # push
 #   ./scripts/sync-github-secrets.sh path/to/.env  # a different source file
+#   ./scripts/sync-github-secrets.sh --database-url  # prompt for it instead
+#
+# --database-url takes the deployment database from a silent prompt rather than
+# from .env, so it stays out of the shell history and the process list. Use it
+# when .env holds the SQLite URL for local work, which is the normal case.
 #
 # The split is deliberate: a credential becomes a *secret* (write-only, masked
 # in every log), and everything else becomes a *variable* (readable in the
@@ -18,12 +23,14 @@
 set -euo pipefail
 
 DRY_RUN=false
+PROMPT_DB_URL=false
 ENV_FILE=".env"
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --database-url) PROMPT_DB_URL=true ;;
+    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) ENV_FILE="$arg" ;;
   esac
 done
@@ -98,11 +105,60 @@ warn_if_placeholder() {
   return 0
 }
 
+# Neon, Supabase and RDS all hand out a URL that asyncpg cannot use verbatim.
+# Two things have to change, and both are silent failures if they do not:
+# the driver has to be named (SQLAlchemy defaults postgresql:// to psycopg2,
+# which is not installed), and sslmode/channel_binding have to go (asyncpg
+# raises `invalid connection option` rather than ignoring them - it negotiates
+# TLS on its own).
+normalise_pg_url() {
+  DB_URL_RAW="$1" python3 - <<'NORMALISE'
+import os
+import sys
+import urllib.parse
+
+raw = os.environ["DB_URL_RAW"].strip()
+parts = urllib.parse.urlsplit(raw)
+
+scheme = parts.scheme
+if scheme in ("postgres", "postgresql"):
+    scheme = "postgresql+asyncpg"
+elif scheme != "postgresql+asyncpg":
+    sys.exit(f"!! not a PostgreSQL URL: scheme is {parts.scheme!r}")
+
+dropped = []
+kept = []
+for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True):
+    if key in ("sslmode", "channel_binding", "options"):
+        dropped.append(key)
+    else:
+        kept.append((key, value))
+
+notes = []
+if dropped:
+    notes.append("dropped " + ", ".join(dropped) + " (asyncpg rejects them)")
+if parts.scheme != scheme:
+    notes.append(f"driver {parts.scheme} -> {scheme}")
+host = parts.hostname or ""
+if "neon.tech" in host and "-pooler" not in host:
+    notes.append("WARNING: this is the direct endpoint, not the pooled one")
+
+print(urllib.parse.urlunsplit((scheme, parts.netloc, parts.path,
+                               urllib.parse.urlencode(kept), parts.fragment)))
+for note in notes:
+    print(note, file=sys.stderr)
+NORMALISE
+}
+
 skipped=()
 
 push() {
   local kind="$1" key="$2" value
-  value="$(read_value "$key")"
+  if [[ "$key" == "DATABASE_URL" && "$PROMPT_DB_URL" == true ]]; then
+    value="$PROMPTED_DB_URL"
+  else
+    value="$(read_value "$key")"
+  fi
 
   if [[ -z "$value" ]]; then
     printf '  %-8s %-24s skipped, empty in %s\n' "$kind" "$key" "$ENV_FILE"
@@ -128,6 +184,21 @@ push() {
   fi
   printf '  %-8s %-24s set\n' "$kind" "$key"
 }
+
+PROMPTED_DB_URL=""
+if $PROMPT_DB_URL; then
+  # -s so it never reaches the terminal or the history file.
+  read -rsp 'Deployment database URL (input hidden): ' entered
+  echo
+  if [[ -z "$entered" ]]; then
+    echo "Nothing entered; falling back to $ENV_FILE for DATABASE_URL."
+    PROMPT_DB_URL=false
+  else
+    PROMPTED_DB_URL="$(normalise_pg_url "$entered")" || exit 1
+    echo "  normalised (${#PROMPTED_DB_URL} chars, value not shown)"
+    echo
+  fi
+fi
 
 echo "Secrets"
 for key in "${SECRET_KEYS[@]}"; do push secret "$key"; done
