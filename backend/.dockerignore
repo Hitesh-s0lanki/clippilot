@@ -34,8 +34,6 @@ requirements-dev.txt
 .gitignore
 .dockerignore
 Dockerfile
-docker-compose.yml
-docker-compose.*.yml
 .DS_Store
 .idea/
 .vscode/
