@@ -48,7 +48,7 @@ class TestCoreFlow:
         assert published.json()["badge"] == "Published"
         assert published.json()["published_at"]
 
-        # 4. A recipient opens it - no Clerk session involved.
+        # 4. Someone in the audience opens it - no Clerk session involved.
         # The identity header is dropped rather than building a second client:
         # a second TestClient spins up its own event loop, and the engine pool
         # already holds connections bound to the first one.
@@ -59,11 +59,11 @@ class TestCoreFlow:
 
         body = preview.json()
         assert body["customer_name"] == "Rahul"
-        assert body["experience"]["personalised_message"] == (
+        assert body["ad"]["personalised_message"] == (
             "Hi Rahul, we have identified an investment opportunity for you."
         )
-        assert "{{customer_name}}" not in body["experience"]["personalised_message"]
-        assert len(body["experience"]["options"]) == 2
+        assert "{{customer_name}}" not in body["ad"]["personalised_message"]
+        assert len(body["ad"]["options"]) == 2
 
         # 5. Record the view.
         view = anon.post(
@@ -73,7 +73,7 @@ class TestCoreFlow:
         assert view.json()["deduplicated"] is False
 
         # 6. Click a response and get the follow-up.
-        option_id = body["experience"]["options"][0]["id"]
+        option_id = body["ad"]["options"][0]["id"]
         clicked = anon.post(
             f"{api}/public/campaigns/{campaign_id}/responses",
             json={"session_id": SESSION, "option_id": option_id},
@@ -104,30 +104,32 @@ class TestCoreFlow:
 
 
 class TestPersonalisation:
-    def test_missing_recipient_falls_back_rather_than_breaking(
+    def test_no_audience_falls_back_rather_than_breaking(
         self, owner_client: TestClient, api: str, draft_payload: dict
     ) -> None:
-        payload = {**draft_payload, "recipients": []}
+        payload = {**draft_payload, "audience_id": None}
         campaign_id = owner_client.post(f"{api}/campaigns", json=payload).json()["id"]
 
         preview = owner_client.get(f"{api}/campaigns/{campaign_id}/preview")
 
         assert preview.status_code == 200
-        assert preview.json()["experience"]["personalised_message"].startswith("Hi there,")
+        assert preview.json()["ad"]["personalised_message"].startswith("Hi there,")
 
     def test_unknown_variable_is_left_literal_and_reported(
         self, owner_client: TestClient, api: str, draft_payload: dict
     ) -> None:
         payload = {**draft_payload}
-        payload["experience"] = {
-            **draft_payload["experience"],
-            "personalised_message": "Hi {{customer_name}}, ref {{account_number}}.",
-        }
+        payload["ads"] = [
+            {
+                **draft_payload["ads"][0],
+                "personalised_message": "Hi {{customer_name}}, ref {{account_number}}.",
+            }
+        ]
         campaign_id = owner_client.post(f"{api}/campaigns", json=payload).json()["id"]
 
         body = owner_client.get(f"{api}/campaigns/{campaign_id}/preview").json()
 
-        assert body["experience"]["personalised_message"] == ("Hi Rahul, ref {{account_number}}.")
+        assert body["ad"]["personalised_message"] == ("Hi Rahul, ref {{account_number}}.")
         assert body["unresolved_variables"] == ["account_number"]
 
 
@@ -150,7 +152,7 @@ class TestDeduplication:
         self, client: TestClient, api: str, published_campaign: dict
     ) -> None:
         campaign_id = published_campaign["id"]
-        options = published_campaign["experience"]["options"]
+        options = published_campaign["ads"][0]["options"]
         url = f"{api}/public/campaigns/{campaign_id}/responses"
 
         first = client.post(url, json={"session_id": SESSION, "option_id": options[0]["id"]})

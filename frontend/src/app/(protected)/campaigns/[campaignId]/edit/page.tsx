@@ -2,7 +2,7 @@ import { ArchiveIcon } from "lucide-react";
 import type { Metadata } from "next";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getUploadConfig } from "@/lib/api/uploads";
+import { listAudiences } from "@/lib/api/audiences";
 
 import { CampaignBuilder } from "../../_components/campaign-builder";
 import { PublishChecklist } from "../../_components/publish-checklist";
@@ -35,12 +35,16 @@ export default async function CampaignEditPage({
     );
   }
 
-  const uploads = await getUploadConfig();
+  const audiences = await listAudiences();
 
   return (
     <div className="space-y-6">
-      <PublishChecklist blockers={campaign.publish_blockers} status={campaign.effective_status} />
-      <CampaignBuilder campaign={campaign} uploads={uploads} />
+      <PublishChecklist
+        campaignId={campaign.id}
+        blockers={campaign.publish_blockers}
+        status={campaign.effective_status}
+      />
+      <CampaignBuilder campaign={campaign} audiences={audiences.items} />
     </div>
   );
 }

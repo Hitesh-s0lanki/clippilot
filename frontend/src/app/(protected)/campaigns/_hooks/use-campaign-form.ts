@@ -12,7 +12,7 @@ import {
 import type { ActionResult } from "@/types/action";
 import type { Campaign } from "@/types/campaign";
 
-import { formToPayload } from "../_lib/campaign-form-payload";
+import { formToCampaignPayload, formToCreatePayload } from "../_lib/campaign-form-payload";
 import {
   DEFAULT_OPEN_SECTIONS,
   sectionForField,
@@ -125,10 +125,9 @@ export function useCampaignForm({ campaign }: UseCampaignFormOptions): CampaignF
     setSummary(null);
 
     startTransition(async () => {
-      const payload = formToPayload(snapshot);
       const result = campaign
-        ? await updateCampaignAction(campaign.id, payload)
-        : await createCampaignAction(payload);
+        ? await updateCampaignAction(campaign.id, formToCampaignPayload(snapshot))
+        : await createCampaignAction(formToCreatePayload(snapshot));
 
       if (!result.ok) {
         handleFailure(result);
@@ -138,11 +137,15 @@ export function useCampaignForm({ campaign }: UseCampaignFormOptions): CampaignF
       setSaved(snapshot);
 
       if (!publishAfter) {
-        toast.success(campaign ? "Draft saved." : "Draft created.");
         if (campaign) {
+          toast.success("Draft saved.");
           router.refresh();
         } else {
-          router.replace(`/campaigns/${result.data.id}/edit`);
+          // A new campaign has no creative yet, and cannot publish without
+          // one, so the next step is the ads screen rather than back to the
+          // settings the user has just finished.
+          toast.success("Campaign created. Now add an ad.");
+          router.replace(`/campaigns/${result.data.id}/ads`);
         }
         return;
       }
@@ -151,7 +154,7 @@ export function useCampaignForm({ campaign }: UseCampaignFormOptions): CampaignF
 
       // The save already succeeded, so a rejected publish must not strand a
       // new campaign on a URL that no longer matches it.
-      if (!campaign) router.replace(`/campaigns/${result.data.id}/edit`);
+      if (!campaign) router.replace(`/campaigns/${result.data.id}/ads`);
 
       if (!published.ok) {
         handleFailure(published);

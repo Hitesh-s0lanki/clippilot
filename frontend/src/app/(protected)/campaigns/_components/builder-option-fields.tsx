@@ -14,14 +14,14 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { FOLLOW_UP_TYPE_LABELS, INTENT_LABELS } from "@/lib/campaign-labels";
 import type { FollowUpType, OptionIntent } from "@/types/campaign";
 
+import type { AdOptionFormValues } from "../_lib/ad-form-values";
 import type { FieldErrors } from "../_lib/campaign-form-validation";
-import type { OptionFormValues } from "../_lib/campaign-form-values";
 import { BuilderField } from "./builder-field";
 
 export interface BuilderOptionFieldsProps {
-  option: OptionFormValues;
+  option: AdOptionFormValues;
   errors: FieldErrors;
-  onChange: (position: number, patch: Partial<OptionFormValues>) => void;
+  onChange: (position: number, patch: Partial<AdOptionFormValues>) => void;
   onBlur: () => void;
 }
 
@@ -41,7 +41,7 @@ export function BuilderOptionFields({
   onBlur,
 }: BuilderOptionFieldsProps) {
   const { position } = option;
-  const prefix = `experience.options.${position}`;
+  const prefix = `options.${position}`;
   const isUrl = option.follow_up_type === "URL";
 
   return (

@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { UploadConfig } from "@/types/upload";
 
-import type { CampaignForm } from "../_hooks/use-campaign-form";
+import type { AdForm } from "../_hooks/use-ad-form";
 import { BuilderField } from "./builder-field";
 import { VideoUploadField } from "./video-upload-field";
 
 export interface BuilderVideoFieldProps {
-  form: CampaignForm;
+  form: AdForm;
   uploads: UploadConfig;
 }
 
@@ -39,10 +39,10 @@ export function BuilderVideoField({ form, uploads }: BuilderVideoFieldProps) {
 
   return (
     <BuilderField
-      field="experience.video_url"
+      field="video_url"
       label="Video"
       required
-      error={errors["experience.video_url"]}
+      error={errors["video_url"]}
       hint="Upload a file, or paste a public https link ending in .mp4, .webm or .mov."
     >
       {(control) => (

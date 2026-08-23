@@ -3,7 +3,7 @@
  *
  * The same string is used for `htmlFor`, `aria-describedby` and the focus call
  * that runs after a failed publish, so a field can be found from its API error
- * without a lookup table: `experience.options.1.label` is always
+ * without a lookup table: `ads.0.options.1.label` is always
  * `field-experience-options-1-label`.
  */
 export function fieldId(field: string): string {

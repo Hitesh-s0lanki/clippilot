@@ -1,3 +1,5 @@
+import type { AudienceSelection } from "./audience";
+
 /**
  * Wire types for the campaign entity.
  *
@@ -25,11 +27,49 @@ export type CampaignEffectiveStatus = CampaignStatus | "INCOMPLETE";
 /** The brief's two-value badge, derived server-side so both readings hold. */
 export type CampaignBadge = "Draft" | "Published";
 
+/** What the user chose for one ad. Persisted, and independent of its campaign. */
+export type AdStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "ARCHIVED";
+
+/**
+ * Derived from the ad's status, its completeness, and its campaign's status.
+ *
+ * `CAMPAIGN_PAUSED` is the value that makes the two-level hierarchy legible:
+ * the ad is switched on and complete, and it still shows nothing, because the
+ * campaign above it is not live.
+ */
+export type AdEffectiveStatus = AdStatus | "INCOMPLETE" | "CAMPAIGN_PAUSED";
+
+/** The action an ad asks for. Supplies the POSITIVE option's default label. */
+export type CallToAction =
+  | "LEARN_MORE"
+  | "GET_QUOTE"
+  | "BOOK_NOW"
+  | "SIGN_UP"
+  | "CONTACT_US"
+  | "GET_OFFER"
+  | "SUBSCRIBE"
+  | "DOWNLOAD"
+  | "APPLY_NOW"
+  | "SHOP_NOW";
+
+/** Human labels for the CTA enum. The API stores the value, the UI shows this. */
+export const CTA_LABELS: Record<CallToAction, string> = {
+  LEARN_MORE: "Learn more",
+  GET_QUOTE: "Get a quote",
+  BOOK_NOW: "Book now",
+  SIGN_UP: "Sign up",
+  CONTACT_US: "Contact us",
+  GET_OFFER: "Get offer",
+  SUBSCRIBE: "Subscribe",
+  DOWNLOAD: "Download",
+  APPLY_NOW: "Apply now",
+  SHOP_NOW: "Shop now",
+};
+
 export type OptionIntent = "POSITIVE" | "NEGATIVE" | "NEUTRAL";
 export type FollowUpType = "MESSAGE" | "URL";
 export type SpecialCategory =
   "NONE" | "FINANCIAL_PRODUCTS_SERVICES" | "CREDIT" | "EMPLOYMENT" | "HOUSING";
-export type AudienceType = "SINGLE" | "LIST";
 export type BudgetType = "NONE" | "DAILY" | "LIFETIME";
 export type Pacing = "STANDARD" | "ACCELERATED";
 
@@ -69,20 +109,6 @@ export interface CampaignTracking {
   external_ref: string | null;
 }
 
-export interface CampaignRecipient {
-  id: string;
-  customer_name: string;
-  email: string | null;
-  phone: string | null;
-  external_ref: string | null;
-}
-
-export interface CampaignAudience {
-  audience_type: AudienceType;
-  recipient_count: number;
-  recipients: CampaignRecipient[];
-}
-
 export interface CampaignOption {
   id: string;
   /** 1 or 2 - the brief's two response options. */
@@ -95,16 +121,58 @@ export interface CampaignOption {
   follow_up_url: string | null;
 }
 
-export interface CampaignExperience {
+/**
+ * One ad - the creative a recipient watches.
+ *
+ * A campaign owns many. The campaign carries the objective, schedule, budget,
+ * audience and compliance; each ad carries one video, its copy, its call to
+ * action, its two response options and its own status.
+ */
+export interface CampaignAd {
   id: string;
+  campaign_id: string;
+  /** Internal label, unique within the campaign. Never shown to a recipient. */
+  name: string;
+
+  status: AdStatus;
+  effective_status: AdEffectiveStatus;
+
   video_url: string | null;
   poster_url: string | null;
   captions_url: string | null;
   video_duration_seconds: number | null;
+
   /** May contain `{{customer_name}}`; resolved server-side for the preview. */
   headline: string | null;
+  /**
+   * Supporting line beneath the headline, read by the recipient - unlike
+   * `Campaign.description`, which is an internal note.
+   */
+  description: string | null;
   personalised_message: string | null;
+  cta: CallToAction;
+
   options: CampaignOption[];
+
+  /** What this ad is still missing, e.g. `video_url`. Empty means it can run. */
+  blockers: string[];
+
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * How many creatives one campaign may hold.
+ *
+ * Mirrors `MAX_ADS_PER_CAMPAIGN` in `backend/src/schemas/ad.py`, which is the
+ * authority. Kept here so the UI can hide the Add button at the ceiling rather
+ * than offering a form that can only fail.
+ */
+export const MAX_ADS_PER_CAMPAIGN = 5;
+
+export interface AdList {
+  items: CampaignAd[];
+  total: number;
 }
 
 /** The metric the objective puts at the top of the analytics view. */
@@ -139,14 +207,19 @@ export interface Campaign {
   delivery: CampaignDelivery;
   compliance: CampaignCompliance;
   tracking: CampaignTracking;
-  audience: CampaignAudience;
-  /** `null` until the campaign has been given a creative. */
-  experience: CampaignExperience | null;
+  /**
+   * The list this campaign targets. `null` until one is selected, or after the
+   * selected list is deleted - which leaves the campaign unpublishable rather
+   * than deleting it.
+   */
+  audience: AudienceSelection | null;
+  /** Empty until the campaign has been given a creative. */
+  ads: CampaignAd[];
   metrics: CampaignMetrics;
 
   /**
    * Dotted field paths that publishing would reject, e.g.
-   * `experience.options.1.label`. Empty means the campaign is publishable.
+   * `ads.0.options.1.label`. Empty means the campaign is publishable.
    */
   publish_blockers: string[];
 
@@ -160,7 +233,7 @@ export interface Campaign {
  * The dashboard row.
  *
  * Deliberately flat and much smaller than {@link Campaign}: the listing
- * endpoint omits recipients, options, description and every configuration
+ * endpoint omits the audience, options, description and every configuration
  * block, and hoists the two fields a card actually needs.
  */
 export interface CampaignSummary {
@@ -170,8 +243,15 @@ export interface CampaignSummary {
   status: CampaignStatus;
   effective_status: CampaignEffectiveStatus;
   badge: CampaignBadge;
+  /** Poster of the campaign's primary ad. */
   poster_url: string | null;
-  recipient_count: number;
+  /** Null until an audience is selected. */
+  audience_name: string | null;
+  /** People in the selected audience. */
+  audience_size: number;
+  ad_count: number;
+  /** Ads that are switched on and complete. */
+  live_ad_count: number;
   metrics: CampaignMetrics;
   created_at: string;
   updated_at: string;
@@ -192,13 +272,6 @@ export interface CampaignPage {
  * so echoing a `Campaign` back at it fails on `id`, `badge` and friends.
  * ---------------------------------------------------------------------- */
 
-export interface RecipientInput {
-  customer_name: string;
-  email?: string | null;
-  phone?: string | null;
-  external_ref?: string | null;
-}
-
 export interface OptionInput {
   position: number;
   label?: string | null;
@@ -210,27 +283,51 @@ export interface OptionInput {
   follow_up_url?: string | null;
 }
 
-export interface ExperienceInput {
+/** Body of `POST /campaigns/{id}/ads`, and of each entry in `CampaignWritePayload.ads`. */
+export interface AdInput {
+  name: string;
   video_url?: string | null;
   poster_url?: string | null;
   captions_url?: string | null;
   video_duration_seconds?: number | null;
   headline?: string | null;
+  description?: string | null;
   personalised_message?: string | null;
+  cta?: CallToAction;
   options: OptionInput[];
 }
+
+/**
+ * Body of `PATCH /campaigns/{id}/ads/{adId}`.
+ *
+ * `status` is absent on purpose: it moves through the status endpoint, which
+ * enforces the legal transitions and the completeness contract.
+ */
+export type AdUpdatePayload = Partial<AdInput>;
 
 /** Body of `POST /campaigns` and `PATCH /campaigns/{id}`. */
 export interface CampaignWritePayload {
   name: string;
   description: string | null;
   objective: CampaignObjective;
-  audience_type: AudienceType;
   schedule: CampaignSchedule;
   budget: CampaignBudget;
   delivery: CampaignDelivery;
   compliance: CampaignCompliance;
   tracking: CampaignTracking;
-  experience: ExperienceInput;
-  recipients: RecipientInput[];
+  /**
+   * The list this campaign targets, by id. A reference, not a copy: audiences
+   * are account-level and several campaigns may point at the same one.
+   */
+  audience_id: string | null;
+  /**
+   * Ads to create alongside the campaign. Present on `POST /campaigns` only -
+   * once a campaign exists its ads are managed through `/campaigns/{id}/ads`,
+   * because replacing the whole list by index on every campaign PATCH is a
+   * footgun when there are several.
+   */
+  ads: AdInput[];
 }
+
+/** Body of `PATCH /campaigns/{id}`. Never carries `ads`. */
+export type CampaignUpdatePayload = Partial<Omit<CampaignWritePayload, "ads">>;

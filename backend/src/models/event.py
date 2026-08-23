@@ -24,21 +24,28 @@ from src.models.types import UTCDateTime
 class CampaignEvent(UUIDPrimaryKey, Base):
     __tablename__ = "campaign_events"
 
-    # Denormalised so analytics never joins through experiences to count a view.
+    # Denormalised so analytics never joins through ads to count a view, and
+    # so the count survives the ad it happened on being deleted.
     campaign_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("campaigns.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    experience_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("campaign_experiences.id", ondelete="CASCADE")
+    # Which creative was on screen. SET NULL rather than CASCADE: deleting one
+    # ad must not erase the campaign's view history, and campaign_id is what
+    # every rollup counts on. The per-ad breakdown simply loses that ad's row.
+    ad_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("campaign_ads.id", ondelete="SET NULL"), index=True
     )
-    recipient_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("campaign_recipients.id", ondelete="SET NULL")
+    # Who saw it, when the link was opened as a named member of the audience.
+    # Null for anonymous preview traffic, and SET NULL if the member is later
+    # removed from the list - a deletion must not erase the view it recorded.
+    member_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("audience_members.id", ondelete="SET NULL")
     )
     option_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("campaign_options.id", ondelete="SET NULL")
+        String(36), ForeignKey("ad_options.id", ondelete="SET NULL")
     )
 
     # Client-generated per preview session; the deduplication key.

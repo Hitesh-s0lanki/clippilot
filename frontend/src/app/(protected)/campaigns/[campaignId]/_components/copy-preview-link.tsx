@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 export interface CopyPreviewLinkProps {
   campaignId: string;
   /** Resolves the link for one recipient, so their name is filled in. */
-  recipientId?: string | null;
+  memberId?: string | null;
 }
 
 /**
@@ -22,11 +22,11 @@ export interface CopyPreviewLinkProps {
  * button that silently does nothing is worse than one that asks you to copy
  * manually.
  */
-export function CopyPreviewLink({ campaignId, recipientId }: CopyPreviewLinkProps) {
+export function CopyPreviewLink({ campaignId, memberId }: CopyPreviewLinkProps) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    const query = recipientId ? `?recipient_id=${encodeURIComponent(recipientId)}` : "";
+    const query = memberId ? `?member_id=${encodeURIComponent(memberId)}` : "";
     const url = `${window.location.origin}/preview/${campaignId}${query}`;
 
     try {

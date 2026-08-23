@@ -6,11 +6,15 @@ SQLAlchemy, so swapping the persistence engine touches this directory alone.
 
 from __future__ import annotations
 
-from sqlalchemy import Select, func, select
+from datetime import datetime
+
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.models import Campaign
-from src.schemas.enums import CampaignStatus
+from src.models.ad import Ad
+from src.schemas.enums import AdStatus, CampaignStatus
 
 
 class CampaignRepository:
@@ -71,6 +75,56 @@ class CampaignRepository:
         )
 
         return list(page.scalars().all()), int(total or 0)
+
+    async def list_public_ads(
+        self, *, now: datetime, limit: int = 24, offset: int = 0
+    ) -> tuple[list[Ad], int]:
+        """One page of **ads** a stranger is allowed to see, newest campaign first.
+
+        The library lists creatives, not campaigns - a campaign with three live
+        ads contributes three cards - so the page is counted and windowed over
+        ads. Counting campaigns here and returning ads would make ``total``
+        disagree with what the page actually shows.
+
+        The filter is the SQL equivalent of the two delivery gates: the
+        campaign is ACTIVE and inside its schedule window, and the ad is
+        switched on with a video. Ad completeness is not re-checked because an
+        ad can only reach ACTIVE through a path that already enforced it -
+        the status endpoint, or publish, which activates complete drafts only.
+        """
+        live = (
+            select(Ad)
+            .join(Campaign, Campaign.id == Ad.campaign_id)
+            # The card is built from both the ad and its campaign, so the
+            # campaign is loaded here rather than left to a lazy attribute
+            # access - which would fire a query outside the async context and
+            # raise, since SQLAlchemy's async layer runs in a greenlet.
+            .options(selectinload(Ad.campaign))
+            .where(
+                Campaign.status == CampaignStatus.ACTIVE.value,
+                or_(Campaign.start_at.is_(None), Campaign.start_at <= now),
+                or_(Campaign.end_at.is_(None), Campaign.end_at > now),
+                Ad.status == AdStatus.ACTIVE.value,
+                Ad.video_url.is_not(None),
+                Ad.personalised_message.is_not(None),
+            )
+        )
+
+        total = await self._session.scalar(select(func.count()).select_from(live.subquery()))
+
+        page = await self._session.execute(
+            # Ordered by when the campaign went live, falling back to when it
+            # was made. COALESCE rather than NULLS LAST, which SQLite and
+            # Postgres spell differently.
+            live.order_by(
+                func.coalesce(Campaign.published_at, Campaign.created_at).desc(),
+                Ad.created_at.asc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+
+        return list(page.scalars().unique().all()), int(total or 0)
 
     async def name_exists(
         self, owner_user_id: str, name: str, *, exclude_id: str | None = None

@@ -14,7 +14,7 @@ export interface FieldControl {
 }
 
 export interface BuilderFieldProps {
-  /** Dotted path, e.g. `experience.options.1.label`. Drives every id here. */
+  /** Dotted path, e.g. `ads.0.options.1.label`. Drives every id here. */
   field: string;
   label: string;
   hint?: string;

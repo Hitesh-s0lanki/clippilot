@@ -6,7 +6,7 @@
 > The brief describes a campaign as a video URL, one message and two buttons. That is a
 > *creative*, not a campaign. This document promotes **Campaign** to a proper top-level
 > entity modelled on the [Meta Marketing API campaign object](https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/),
-> and nests the video experience beneath it.
+> and nests the ads beneath it.
 >
 > Everything the brief mandates is preserved and marked **`BRIEF`**. Everything added here
 > is marked **`EXT`** — a deliberate extension, not a misreading of the scope. See
@@ -22,7 +22,7 @@ In Meta Ads the hierarchy is three tiers, and each tier owns a distinct concern:
 | --- | --- | --- |
 | **Campaign** | Objective, status, budget ceiling, compliance category | **Campaign** — this document |
 | **Ad Set** | Audience, schedule, delivery pacing, budget | Folded **into Campaign** |
-| **Ad** | Creative — video, copy, call to action | **Experience** — nested child |
+| **Ad** | Creative — video, copy, call to action | **Ad** — nested child, 1:N |
 
 Trustvid campaigns are **sent to a known recipient list**, not bid into an auction, so the
 ad-set tier carries no independent meaning: one campaign has one audience and one schedule.
@@ -32,16 +32,20 @@ giving the campaign every field a real top-level campaign carries.
 ```
 Campaign  (top level — owns objective, lifecycle, schedule, budget, audience, compliance)
 │
-├── Experience  (1:1 today, 1:N ready — the creative: video + message + options)
+├── Ads[]  (1:N — each one a creative: video + copy + CTA + options, with its own status)
 │   └── Options[2]  (label + follow-up)
 │
-├── Recipients[]  (the audience)
+└── Audience  (N:1 — a reusable list, referenced not owned)
+    └── Members[]  (the people)
 │
 └── Events[]  (views + responses → analytics)
 ```
 
-**Design decision:** the schema below is 1:N-ready. `experiences` is a separate table with a
-`campaign_id` foreign key, so adding A/B variants later is an insert, not a migration.
+**Design decision:** a campaign owns **many ads**. `campaign_ads` is a separate table with a
+`campaign_id` foreign key, so an A/B variant is an insert. Each ad carries its own `status`,
+which is what makes pausing one creative without touching the rest of the campaign possible —
+and what makes `AdEffectiveStatus.CAMPAIGN_PAUSED` necessary: an ad can be switched on,
+complete, and still delivering nothing because the level above it is not running.
 
 ---
 
@@ -221,33 +225,63 @@ present on the destination URL win — Trustvid never overwrites an explicit val
 
 ## 3. Nested entities
 
-### 3.1 Experience (the creative)
+### 3.1 Ad (the creative)
 
-One per campaign today; the schema allows many.
+Up to **five** per campaign — `MAX_ADS_PER_CAMPAIGN`. Each one is what a recipient actually
+watches.
+
+Five, not twenty: a campaign is a single message tested a few ways, and a list long enough
+to need scrolling is a list nobody compares.
+
+**The campaign is created first, then its ads.** `POST /campaigns` accepts ads inline, but
+the builder deliberately does not send them — it saves the campaign and takes the user to
+its ads screen. Asking someone to invent a creative before the campaign it belongs to
+exists is what made the old single form long enough to lose people in.
 
 | Field | Type | Req. | Source | Notes |
 | --- | --- | :---: | :---: | --- |
 | `id` | UUID | auto | `EXT` | |
 | `campaign_id` | UUID | ✅ | `EXT` | FK → `campaigns.id`, `ON DELETE CASCADE`. |
+| `name` | string(1–120) | ✅ | `EXT` | Internal label, unique per campaign (case-insensitive). Never shown to a recipient. |
+| `status` | enum | ✅ | `EXT` | `DRAFT` *(default)* \| `ACTIVE` \| `PAUSED` \| `ARCHIVED`. Independent of the campaign's. |
 | `video_url` | URL | ✅ | `BRIEF` | Publicly accessible. `https` only. `.mp4` / `.webm` / `.mov`. |
 | `poster_url` | URL | — | `EXT` | Thumbnail before playback. Also the dashboard card image. |
 | `captions_url` | URL | — | `EXT` | WebVTT. Accessibility — see [§8](#8-scope-guidance). |
 | `video_duration_seconds` | integer | — | `EXT` | Metadata only. No processing is performed. |
 | `headline` | string(0–80) | — | `EXT` | Shown above the video. Supports variables. |
+| `description` | string(0–500) | — | `EXT` | Supporting line beneath the headline. **Recipient-facing**, unlike `campaigns.description`, which is an internal note. |
 | `personalised_message` | string(1–500) | ✅ | `BRIEF` | Supports variables. See [§3.3](#33-personalisation-variables). |
+| `cta` | enum | ✅ | `EXT` | `LEARN_MORE` *(default)*, `BOOK_NOW`, `GET_QUOTE`, `SIGN_UP`, … Names the POSITIVE option's intent and supplies its default label. |
+
+**Derived: `effective_status`.** Mirrors the campaign's `status` / `effective_status` split
+one level down.
+
+| Value | Means |
+| --- | --- |
+| `INCOMPLETE` | Missing a video, a message, or two valid options |
+| `DRAFT` | Finished, not switched on yet |
+| `ACTIVE` | Switched on, complete, and its campaign is live — the only value a recipient can open |
+| `PAUSED` | Switched off deliberately |
+| `CAMPAIGN_PAUSED` | Switched on and faultless, but the campaign above it is not running |
+| `ARCHIVED` | Terminal |
+
+**Why the CTA is an enum and not a second button.** The two response options already *are*
+the calls to action. `cta` names what the positive one asks for and fills in its label when
+the user has not written one, so choosing "Book now" is not also a copywriting task. The
+two-button interaction is unchanged.
 
 ### 3.2 Option
 
-Exactly **two** per experience, `position` 1 and 2 — `BRIEF`. Stored as rows, not columns,
-so a third option is data rather than a schema change.
+Exactly **two** per ad, `position` 1 and 2 — `BRIEF`. Stored as rows, not columns, so a
+third option is data rather than a schema change.
 
 | Field | Type | Req. | Source | Notes |
 | --- | --- | :---: | :---: | --- |
 | `id` | UUID | auto | `EXT` | |
-| `experience_id` | UUID | ✅ | `EXT` | FK, cascade. |
-| `position` | smallint | ✅ | `BRIEF` | `1` or `2`. Unique per experience. |
+| `ad_id` | UUID | ✅ | `EXT` | FK → `campaign_ads.id`, cascade. |
+| `position` | smallint | ✅ | `BRIEF` | `1` or `2`. Unique per ad. |
 | `key` | slug | auto | `EXT` | Stable analytics key, slug of `label` at creation. Never changes when the label is reworded. |
-| `label` | string(1–40) | ✅ | `BRIEF` | Button text. e.g. `Tell me more`. |
+| `label` | string(1–40) | ✅ | `BRIEF` | Button text. e.g. `Tell me more`. Defaults from the ad's `cta` when left blank. |
 | `intent` | enum | ✅ | `EXT` | `POSITIVE` \| `NEGATIVE` \| `NEUTRAL`. Feeds the `LEAD_CAPTURE` primary metric. |
 | `follow_up_type` | enum | ✅ | `EXT` | `MESSAGE` *(default)* \| `URL` |
 | `follow_up_message` | string(1–500) | conditional | `BRIEF` | Required when `follow_up_type = MESSAGE`. Supports variables. |
@@ -264,37 +298,76 @@ substitution runs over `headline`, `personalised_message` and `follow_up_message
 
 | Variable | Resolves to | Source |
 | --- | --- | :---: |
-| `{{customer_name}}` | `recipient.customer_name` | `BRIEF` |
+| `{{customer_name}}` | `audience_member.full_name` | `BRIEF` |
+| `{{first_name}}` | The leading word of `full_name` | `EXT` |
+| `{{city}}` | `audience_member.city` | `EXT` |
+| `{{country}}` | `audience_member.country` | `EXT` |
 | `{{campaign_name}}` | `campaign.name` | `EXT` |
 | `{{option_label}}` | The clicked option's label *(follow-up copy only)* | `EXT` |
+
+`{{first_name}}` exists because "Hi Rahul" reads like a person wrote it and "Hi Rahul
+Mehta" does not, which is the whole reason a campaign personalises at all.
 
 **Resolution rules**
 
 - Unknown variable → left **literal** and surfaced as a builder warning. Never blanked
   silently, and never a 500.
-- Missing recipient value → falls back to `there` (`Hi there, …`), so a preview is never broken.
+- No member named on the link → falls back to the audience's first member; with no audience,
+  to `there` (`Hi there, …`), so a preview is never broken. The preview and the follow-up
+  resolve identically, so the two halves of one interaction cannot disagree about who is watching.
+- Missing `city` or `country` → falls back to `your city` / `your country`. A place has no
+  neutral word the way a name has `there`, but it needs one all the same: rendering `""`
+  turns "an opportunity in {{city}}" into "an opportunity in ." for every member whose city
+  was never filled in — and a ragged list is the normal case, not an edge.
 - Resolved values are **HTML-escaped** at render. A customer name is untrusted input.
 - Whitespace inside the braces is tolerated: `{{ customer_name }}` resolves.
 
-### 3.4 Recipient (the audience)
+### 3.4 Audience and its members
 
-`BRIEF` carries a single `customer_name` on the campaign. `EXT` promotes it to a row, so
-the brief's single-customer case is simply a one-row list — and the optional
-[CSV upload enhancement](07-scope-and-enhancements.md#72-optional-enhancements) becomes a
-bulk insert rather than a rewrite.
+`BRIEF` carries a single `customer_name` on the campaign. `EXT` promotes the audience to a
+**top-level, reusable entity**: a list is built once — by hand or from a
+[CSV upload](07-scope-and-enhancements.md#72-optional-enhancements) — and any number of
+campaigns select it. The brief's single-customer case is an audience of one.
+
+A campaign therefore holds a **reference**, not a copy. `campaigns.audience_id` is
+`ON DELETE SET NULL`: deleting a list must never delete the campaigns that used it or their
+analytics, so the campaign simply falls back to unpublishable until another list is chosen.
+
+**`audiences`**
 
 | Field | Type | Req. | Notes |
 | --- | --- | :---: | --- |
 | `id` | UUID | auto | |
-| `campaign_id` | UUID | ✅ | FK, cascade. |
-| `customer_name` | string(1–80) | ✅ | `BRIEF`. Resolves `{{customer_name}}`. |
-| `email` | email | — | Nullable. Unique per campaign when present. |
-| `phone` | E.164 | — | Nullable. |
+| `owner_user_id` | string(120) | ✅ | Clerk user id. No local users table. |
+| `name` | string(1–120) | ✅ | Unique per owner, case-insensitive. |
+| `description` | string(0–500) | — | Internal note. |
+| `member_count` | integer | auto | Denormalised, recomputed from a `COUNT` after every membership change. Two reads need it where a query cannot run: the listing (an N+1 otherwise) and `collect_publish_blockers`, which is synchronous. |
+
+**`audience_members`**
+
+| Field | Type | Req. | Notes |
+| --- | --- | :---: | --- |
+| `id` | UUID | auto | |
+| `audience_id` | UUID | ✅ | FK, cascade. |
+| `full_name` | string(1–80) | ✅ | `BRIEF`. Resolves `{{customer_name}}`. The only required field — a real uploaded list is ragged. |
+| `email` | email | — | Unique per audience when present, case-insensitively. |
+| `phone` | E.164 | — | |
+| `age` | integer | — | The number, never the bucket: a stored bucket is wrong the morning after a birthday. |
+| `gender` | enum | ✅ | `FEMALE` \| `MALE` \| `OTHER` \| `UNKNOWN` *(default)*. `UNKNOWN` is a real bucket, not a null — a breakdown has to account for everyone. |
+| `city` / `country` | string | — | Normalised on write so `USA` and `United States` do not become two segments. |
 | `external_ref` | string(0–120) | — | CRM contact id. |
-| `attributes` | JSON | — | Free-form. Reserved for future custom variables. |
+| `attributes` | JSON | — | Free-form, carried through import and export untouched. |
 | `created_at` | timestamptz | auto | |
 
-Campaign-level: `audience_type` — `SINGLE` *(default, exactly one recipient)* \| `LIST`.
+`age_group` is **derived at read time** from `age`, never stored.
+
+**Sample data.** An account with no audiences is given three sample lists — 100 people in
+total — on its first listing, so every user lands on a populated segment breakdown instead
+of an empty screen. Each account gets its **own copy**, not a shared row: a global list
+would let one user edit or delete what every other user targets, and a campaign can only
+reference an audience its owner holds. The provisioning is idempotent by name, so it never
+doubles anybody, and `SAMPLE_AUDIENCES=false` turns it off for a tenant that should start
+clean.
 
 ### 3.5 Event
 
@@ -302,8 +375,8 @@ Campaign-level: `audience_type` — `SINGLE` *(default, exactly one recipient)* 
 | --- | --- | :---: | --- |
 | `id` | UUID | auto | |
 | `campaign_id` | UUID | ✅ | FK, cascade. Denormalised for fast analytics. |
-| `experience_id` | UUID | ✅ | FK. |
-| `recipient_id` | UUID | — | Null for anonymous preview traffic. |
+| `ad_id` | UUID | — | FK → `campaign_ads.id`, `ON DELETE SET NULL` — deleting one creative must not erase the campaign's view history. |
+| `member_id` | UUID | — | Null for anonymous preview traffic. |
 | `session_id` | UUID | ✅ | Client-generated per preview session. The dedup key. |
 | `type` | enum | ✅ | `VIEW` \| `RESPONSE` |
 | `option_id` | UUID | conditional | Required when `type = RESPONSE`, must be null otherwise. |
@@ -344,11 +417,12 @@ a half-built campaign, but not run one.
 | `timezone` | — *(defaults `UTC`)* | ✅ |
 | `special_category` | — *(defaults `NONE`)* | ✅ |
 | `disclaimer_text` | — | ✅ *when category ≠ `NONE`* |
-| `experience.video_url` | — | ✅ |
-| `experience.personalised_message` | — | ✅ |
+| `ads` | — | ✅ at least one **complete** ad |
+| `ads.{i}.video_url` | — | ✅ on that ad |
+| `ads.{i}.personalised_message` | — | ✅ on that ad |
 | Both options: `label` | — | ✅ |
 | Both options: follow-up (message **or** url) | — | ✅ |
-| ≥ 1 recipient | — | ✅ |
+| an audience with ≥ 1 member | — | ✅ |
 | `budget_amount_minor` | — | ✅ *when `budget_type ≠ NONE`* |
 
 **Cross-field rules**
@@ -359,7 +433,6 @@ a half-built campaign, but not run one.
 4. `special_category ≠ NONE` requires non-empty `disclaimer_text`.
 5. `follow_up_type = URL` requires `follow_up_url`; `MESSAGE` requires `follow_up_message`.
 6. Exactly two options, at `position` 1 and 2.
-7. `audience_type = SINGLE` requires exactly one recipient.
 8. `objective` is immutable once `published_at` is set — it would invalidate historical metrics.
 
 **Sanitisation**
@@ -378,7 +451,7 @@ a half-built campaign, but not run one.
     "code": "VALIDATION_ERROR",
     "message": "The campaign cannot be published.",
     "details": [
-      { "field": "experience.video_url", "code": "REQUIRED", "message": "A video URL is required before publishing." },
+      { "field": "ads.0.video_url", "code": "REQUIRED", "message": "A video URL is required before publishing." },
       { "field": "disclaimer_text",      "code": "REQUIRED_WHEN", "message": "A disclaimer is required for financial services campaigns." }
     ]
   }
@@ -450,22 +523,23 @@ onto field-level messages without branching on shape.
     "external_ref": "CRM-88213"
   },
 
-  "audience": {
-    "audience_type": "SINGLE",
-    "recipient_count": 1,
-    "recipients": [
-      { "id": "b2…", "customer_name": "Rahul", "email": "rahul@example.com", "phone": null, "external_ref": "CRM-88213-01" }
-    ]
-  },
+  "audience": { "id": "b2…", "name": "Lapsed SIP investors", "member_count": 1 },
 
-  "experience": {
+  "ads": [{
     "id": "4e…",
+    "campaign_id": "9f…",
+    "name": "Advisor call — risk-matched",
+    "status": "ACTIVE",
+    "effective_status": "ACTIVE",
     "video_url": "https://cdn.example.com/investment-opportunity.mp4",
     "poster_url": "https://cdn.example.com/investment-opportunity.jpg",
     "captions_url": null,
     "video_duration_seconds": 42,
     "headline": "A moment of your time, {{customer_name}}",
+    "description": "Reviewed by an advisor, matched to your risk profile.",
     "personalised_message": "Hi {{customer_name}}, we have identified an investment opportunity for you.",
+    "cta": "LEARN_MORE",
+    "blockers": [],
     "options": [
       {
         "id": "7a…", "position": 1, "key": "tell-me-more", "label": "Tell me more",
@@ -503,8 +577,10 @@ onto field-level messages without branching on shape.
 - Rates are decimals in `0.0–1.0`, not pre-formatted percentages.
 - `metrics` and `effective_status` / `badge` are **read-only** — sent on `GET`, ignored on write.
 
-`GET /api/v1/campaigns` returns the same object minus `audience.recipients`,
-`experience.options` and `description` — enough for the dashboard card, small enough to list.
+`GET /api/v1/campaigns` returns the same object minus `audience` (it carries
+`audience_name` and `audience_size` instead),
+`ads` and `description` — enough for the dashboard card, small enough to list. It carries
+`ad_count` and `live_ad_count` instead.
 
 ---
 
@@ -513,12 +589,12 @@ onto field-level messages without branching on shape.
 Five tables. Every child cascades from `campaigns`, so deleting a campaign is one statement.
 
 ```
-campaigns ──1:N──▶ campaign_experiences ──1:N──▶ campaign_options
+campaigns ──1:N──▶ campaign_ads ──1:N──▶ ad_options
     │                                                   ▲
-    ├──1:N──▶ campaign_recipients ──┐                   │
+    ├──N:1──▶ audiences ──1:N──▶ audience_members       │
     │                               │                   │
     └──1:N──▶ campaign_events ──────┴───────────────────┘
-                (recipient_id, option_id nullable FKs)
+                (member_id, ad_id, option_id nullable FKs)
 ```
 
 **Indexes that matter**
@@ -530,14 +606,18 @@ campaigns ──1:N──▶ campaign_experiences ──1:N──▶ campaign_op
 | `uniq_view_per_session` | partial, `type='VIEW'` | Duplicate view protection |
 | `uniq_response_per_session` | partial, `type='RESPONSE'` | Duplicate response protection |
 | `idx_events_campaign_type` | `campaign_events (campaign_id, type)` | Analytics aggregation |
-| `uniq_option_position` | `campaign_options (experience_id, position)` | Exactly two options, no gaps |
+| `uniq_option_position` | `ad_options (ad_id, position)` | Exactly two options, no gaps |
+| `uniq_ad_name_per_campaign` | `campaign_ads (campaign_id, lower(name))` | Ad names unique within their campaign |
 
 **Deliberate choices**
 
 - Options are **rows, not columns**. `option_1_label` / `option_2_label` columns would make
   a third option a migration and make analytics a `UNION`.
 - `campaign_id` is denormalised onto `campaign_events` — analytics never joins through
-  `experiences` to count a view.
+  `campaign_ads` to count a view, and the count survives the ad being deleted.
+- An ad with recorded activity cannot be deleted, only archived: its events carry the
+  campaign's history, and deleting the creative they refer to leaves that history
+  unexplainable.
 - Money in `BIGINT` minor units. Never `FLOAT`.
 - Enums as constrained `TEXT`, not native DB enums — adding a value stays a code change.
 - All timestamps `timestamptz`. `timezone` is a **display** preference, never a storage format.
@@ -555,7 +635,7 @@ campaigns ──1:N──▶ campaign_experiences ──1:N──▶ campaign_op
 | `interaction_rate` | `interactions / views` | `BRIEF`. `0` when `views = 0` — **never divide by zero.** |
 | `by_option[]` | Per option: `key`, `label`, `intent`, `clicks`, `share` | `BRIEF` (clicks + split) |
 | `primary_metric` | Chosen by `objective` — see [§2.2](#22-objective) | `EXT` |
-| `unique_viewers` | `count(distinct recipient_id)` | `EXT` |
+| `unique_viewers` | `count(distinct session_id)` | `EXT` |
 | `first_activity_at` / `last_activity_at` | Event range | `EXT` |
 | `timeseries[]` | Daily `{ date, views, interactions }` in the campaign's `timezone` | `EXT` — feeds the optional chart |
 
@@ -572,26 +652,26 @@ flow beats broad partial features. Build in this order.
 
 **Tier 1 — the brief. Ship this first, complete.**
 `name` · `status` (Draft/Published) · `created_at` · `video_url` · `personalised_message`
-with `{{customer_name}}` · one recipient · two options with labels + follow-ups ·
+with `{{customer_name}}` · an audience of one · two options with labels + follow-ups ·
 view & response events with dedup · views / interactions / rate / split.
 
 **Tier 2 — cheap structure, high signal.** Roughly an hour, and it is what makes the
 model read as a real campaign rather than a form:
 `objective` · the six-state `status` + derived `effective_status` + `badge` ·
 `start_at` / `end_at` / `timezone` · `special_category` + `disclaimer_text` ·
-option `key` + `intent` · options and recipients as **rows**.
+option `key` + `intent` · options and audience members as **rows**.
 
 > The row-based schema is the one Tier-2 item worth doing even if nothing else is —
 > retrofitting it later touches every layer.
 
 **Tier 3 — only with genuine time left.**
 Money budget & spend cap · send caps & pacing · UTM tracking · `poster_url` /
-`captions_url` / `headline` · multi-recipient lists & CSV upload · `timeseries` + chart.
+`captions_url` / `headline` · reusable audiences & CSV upload · `timeseries` + chart.
 
 **Documented as designed, not built** — say so plainly in the README rather than leaving it
 ambiguous: multi-tenancy · authentication · real send/delivery execution (the caps in
 [§2.5](#25-budget-and-delivery) are stored and validated, nothing dispatches) · A/B
-experiences · scheduler process (schedule states are computed on read, not driven by a job).
+scheduler process (schedule states are computed on read, not driven by a job).
 
 ---
 

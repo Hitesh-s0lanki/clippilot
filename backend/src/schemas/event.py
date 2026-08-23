@@ -15,7 +15,21 @@ class ViewEventCreate(StrictModel):
         max_length=64,
         description="Client-generated, stable for one preview session. The dedup key.",
     )
-    recipient_id: str | None = None
+    ad_id: str | None = Field(
+        None,
+        description=(
+            "Which ad was on screen. Optional: without it the campaign's "
+            "primary ad is assumed, and on a response the option id already "
+            "identifies its ad."
+        ),
+    )
+    member_id: str | None = Field(
+        None,
+        description=(
+            "Which member of the campaign's audience opened it. Optional: a "
+            "shared link carries nobody, and the event is recorded anonymously."
+        ),
+    )
 
     @field_validator("session_id")
     @classmethod
@@ -33,6 +47,7 @@ class EventRead(StrictModel):
     id: str
     type: EventType
     session_id: str
+    ad_id: str | None = None
     option_id: str | None = None
     occurred_at: datetime
 

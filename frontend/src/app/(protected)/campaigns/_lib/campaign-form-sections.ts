@@ -1,23 +1,18 @@
 /**
- * The builder's eight sections, and the map from an error to the section that
- * holds it.
+ * The campaign form's six sections, and the map from an error to the section
+ * that holds it.
  *
- * Forty fields on one screen is the anti-pattern the accordion exists to
- * avoid, but progressive disclosure has a failure mode of its own: an error on
- * a field inside a collapsed section is an error nobody can see. So every
- * field path resolves to a section, and the form opens the ones that need
- * attention before it reports anything.
+ * Progressive disclosure has a failure mode: an error on a field inside a
+ * collapsed section is an error nobody can see. So every field path resolves
+ * to a section, and the form opens the ones that need attention before it
+ * reports anything.
+ *
+ * The creative is not here. Ads are a separate screen with their own flat
+ * form - see `ad-form.tsx`.
  */
 
 export type BuilderSectionId =
-  | "campaign"
-  | "schedule"
-  | "audience"
-  | "experience"
-  | "responses"
-  | "compliance"
-  | "delivery"
-  | "tracking";
+  "campaign" | "schedule" | "audience" | "compliance" | "delivery" | "tracking";
 
 export interface BuilderSection {
   id: BuilderSectionId;
@@ -38,18 +33,6 @@ export const BUILDER_SECTIONS: BuilderSection[] = [
     id: "audience",
     title: "Audience",
     description: "Who receives it. The name here resolves {{customer_name}}.",
-    tier: 1,
-  },
-  {
-    id: "experience",
-    title: "Experience",
-    description: "The video and the message the customer sees.",
-    tier: 1,
-  },
-  {
-    id: "responses",
-    title: "Responses",
-    description: "The two options and what each one replies with.",
     tier: 1,
   },
   {
@@ -86,9 +69,7 @@ export const DEFAULT_OPEN_SECTIONS: BuilderSectionId[] = BUILDER_SECTIONS.filter
 /** Which section a dotted field path lives in. */
 export function sectionForField(field: string): BuilderSectionId {
   if (field.startsWith("schedule.")) return "schedule";
-  if (field.startsWith("recipients") || field === "audience_type") return "audience";
-  if (field.startsWith("experience.options")) return "responses";
-  if (field.startsWith("experience.")) return "experience";
+  if (field === "audience_id") return "audience";
   if (field.startsWith("compliance.")) return "compliance";
   if (field.startsWith("budget.") || field.startsWith("delivery.")) return "delivery";
   if (field.startsWith("tracking.")) return "tracking";
@@ -102,12 +83,8 @@ const FIELD_LABELS: Record<string, string> = {
   "schedule.start_at": "Start",
   "schedule.end_at": "End",
   "schedule.timezone": "Timezone",
-  recipients: "Recipients",
-  "experience.video_url": "Video URL",
-  "experience.poster_url": "Poster image",
-  "experience.headline": "Headline",
-  "experience.personalised_message": "Personalised message",
-  "experience.options": "Response options",
+  audience_id: "Audience",
+  ads: "Ads",
   "compliance.disclaimer_text": "Disclaimer",
   "budget.budget_amount_minor": "Budget amount",
   "budget.spend_cap_minor": "Spend cap",
@@ -115,26 +92,21 @@ const FIELD_LABELS: Record<string, string> = {
   "delivery.pacing": "Pacing",
 };
 
-/** A human name for a field path, including the generated per-option ones. */
+/** A human name for a field path, including the per-ad ones. */
 export function describeField(field: string): string {
   const known = FIELD_LABELS[field];
   if (known) return known;
 
-  const option = /^experience\.options\.(\d+)\.(\w+)$/.exec(field);
-  if (option) {
-    const part =
-      option[2] === "label"
-        ? "button label"
-        : option[2] === "follow_up_url"
-          ? "follow-up link"
-          : "follow-up message";
-    return `Option ${option[1]} ${part}`;
-  }
-
-  const recipient = /^recipients\.(\d+)\.(\w+)$/.exec(field);
-  if (recipient) {
-    const index = Number.parseInt(recipient[1], 10) + 1;
-    return `Recipient ${index} ${recipient[2].replace(/_/g, " ")}`;
+  // Publishing reports blockers on the campaign's ads, which this form does
+  // not contain - they are named so the checklist can point at the Ads tab.
+  const ad = /^ads\.(\d+)\.(.+)$/.exec(field);
+  if (ad) {
+    const index = Number.parseInt(ad[1], 10) + 1;
+    const option = /^options\.(\d+)\.(\w+)$/.exec(ad[2]);
+    const part = option
+      ? `option ${option[1]} ${option[2].replace(/_/g, " ")}`
+      : ad[2].replace(/_/g, " ");
+    return `Ad ${index}: ${part}`;
   }
 
   return field;

@@ -1,91 +1,72 @@
-import { HomeIcon, LayoutGridIcon, PlusIcon, type LucideIcon } from "lucide-react";
+import {
+  LayoutDashboardIcon,
+  PlayCircleIcon,
+  PlusIcon,
+  UsersIcon,
+  type LucideIcon,
+} from "lucide-react";
 
 export interface NavLink {
   href: string;
   label: string;
   Icon: LucideIcon;
-  /**
-   * Routes that should light this link up even though the path is not an exact
-   * match - a campaign's own screens belong to "Campaigns", not to nothing.
-   */
-  matches?: readonly string[];
-}
-
-export interface NavGroup {
-  label: string;
-  links: readonly NavLink[];
 }
 
 /**
- * The console's destinations, grouped as the rail shows them.
+ * The console's fixed destinations.
  *
- * One definition, read by the sidebar nav and by the topbar's section label, so
- * a renamed link cannot say "Campaigns" in one place and "Dashboard" in the
- * other. `matches` exists because `/campaigns/<id>/edit` has no nav entry of
- * its own but is unmistakably part of the campaigns section.
+ * Only the entries whose URL is known without loading anything live here - the
+ * campaign rows in the rail come from the API and are built in
+ * `AppSidebarCampaignMenu` instead.
  *
- * `Icon` holds the component rather than a name string, which means this module
- * can only be read from a Client Component - a lucide icon is a `forwardRef`
- * object and React refuses to serialise it across the server boundary. That is
- * why `AppSidebar` passes a group *key* and the nav resolves the links itself,
- * rather than being handed an array of them.
+ * `Icon` holds the component rather than a name string, so this module can only
+ * be read from a Client Component: a lucide icon is a `forwardRef` object and
+ * React refuses to serialise it across the server boundary.
  */
-export const NAV_GROUPS = {
-  console: {
-    label: "Console",
-    links: [
-      {
-        href: "/dashboard",
-        label: "Campaigns",
-        Icon: LayoutGridIcon,
-        matches: ["/campaigns"],
-      },
-      {
-        href: "/campaigns/new",
-        label: "New campaign",
-        Icon: PlusIcon,
-      },
-    ],
-  },
-  /** Reachable, but not where the work starts. */
-  more: {
-    label: "More",
-    links: [
-      {
-        href: "/",
-        label: "Product overview",
-        Icon: HomeIcon,
-      },
-    ],
-  },
-} as const satisfies Record<string, NavGroup>;
+export const OVERVIEW_LINK: NavLink = {
+  href: "/dashboard",
+  label: "Dashboard",
+  Icon: LayoutDashboardIcon,
+};
 
-export type NavGroupKey = keyof typeof NAV_GROUPS;
+export const CAMPAIGNS_LINK: NavLink = {
+  href: "/dashboard",
+  label: "Campaigns",
+  Icon: PlayCircleIcon,
+};
 
-// The callback's return type is annotated because `as const` makes each group's
-// `links` a readonly tuple, which `flatMap` will not widen on its own.
-const ALL_LINKS: readonly NavLink[] = Object.values(NAV_GROUPS).flatMap(
-  (group): readonly NavLink[] => group.links,
-);
+export const NEW_CAMPAIGN_LINK: NavLink = {
+  href: "/campaigns/new",
+  label: "New campaign",
+  Icon: PlusIcon,
+};
 
-/**
- * Whether `pathname` is inside the section a link owns.
- *
- * Exact match first, then the declared prefixes. `/campaigns/new` has its own
- * entry, so it is excluded from the `/campaigns` prefix - otherwise both links
- * would claim the same URL and two items would read as current.
- */
-export function isNavLinkActive(link: NavLink, pathname: string): boolean {
-  if (pathname === link.href) return true;
+export const AUDIENCES_LINK: NavLink = {
+  href: "/audiences",
+  label: "Audiences",
+  Icon: UsersIcon,
+};
 
-  return (link.matches ?? []).some(
-    (prefix) =>
-      pathname.startsWith(`${prefix}/`) &&
-      !ALL_LINKS.some((other) => other.href !== link.href && other.href === pathname),
-  );
+/** `/campaigns/<id>/…` - a campaign's own screens, which have no fixed URL. */
+const CAMPAIGN_DETAIL = /^\/campaigns\/(?!new(?:\/|$))([^/]+)/;
+
+/** The id of the campaign the current path belongs to, if it is inside one. */
+export function currentCampaignId(pathname: string): string | undefined {
+  return CAMPAIGN_DETAIL.exec(pathname)?.[1];
 }
 
-/** The label for whichever section `pathname` sits in, for the topbar. */
-export function activeNavLabel(pathname: string): string | undefined {
-  return ALL_LINKS.find((link) => isNavLinkActive(link, pathname))?.label;
+/**
+ * The name of the section a path sits in, for the topbar.
+ *
+ * Derived rather than stored per route: a campaign's builder, preview and
+ * analytics screens are all "Campaigns", and none of them has a nav entry of
+ * its own to hang a label on.
+ */
+export function activeSectionLabel(pathname: string): string | undefined {
+  if (pathname === OVERVIEW_LINK.href) return OVERVIEW_LINK.label;
+  if (pathname === NEW_CAMPAIGN_LINK.href) return NEW_CAMPAIGN_LINK.label;
+  if (pathname.startsWith(AUDIENCES_LINK.href)) return AUDIENCES_LINK.label;
+  if (currentCampaignId(pathname)) return CAMPAIGNS_LINK.label;
+
+  return undefined;
 }

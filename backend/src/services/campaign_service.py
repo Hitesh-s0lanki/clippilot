@@ -12,7 +12,8 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 
 from src.app.errors import ApiError
-from src.models import Campaign, CampaignOption, Experience, Recipient
+from src.models import Ad, Campaign
+from src.repositories.audience_repository import AudienceRepository
 from src.repositories.campaign_repository import CampaignRepository
 from src.repositories.event_repository import EventRepository
 from src.schemas.campaign import (
@@ -24,13 +25,12 @@ from src.schemas.campaign import (
 )
 from src.schemas.enums import (
     DEFAULT_DISCLAIMERS,
-    AudienceType,
+    AdStatus,
     CampaignStatus,
     SpecialCategory,
 )
-from src.schemas.experience import ExperienceInput
-from src.schemas.recipient import RecipientInput
 from src.services import mappers
+from src.services.ad_builder import apply_ad_input, guard_unique_ad_names
 from src.services.publish_validator import collect_publish_blockers
 from src.services.status_service import (
     UNPUBLISH_TARGET,
@@ -41,9 +41,15 @@ from src.services.validators_utm import default_utm_campaign
 
 
 class CampaignService:
-    def __init__(self, campaigns: CampaignRepository, events: EventRepository) -> None:
+    def __init__(
+        self,
+        campaigns: CampaignRepository,
+        events: EventRepository,
+        audiences: AudienceRepository,
+    ) -> None:
         self._campaigns = campaigns
         self._events = events
+        self._audiences = audiences
 
     # --- reads -------------------------------------------------------------
 
@@ -97,20 +103,23 @@ class CampaignService:
 
         campaign = Campaign(owner_user_id=owner_user_id, name=payload.name)
         self._apply_scalar_fields(campaign, payload)
+        campaign.audience_id = await self._resolve_audience(payload.audience_id, owner_user_id)
 
-        experience = Experience(campaign=campaign)
-        self._apply_experience(experience, payload.experience)
-        campaign.experiences.append(experience)
-
-        self._replace_recipients(campaign, payload.recipients)
-        self._enforce_audience_rule(campaign)
+        guard_unique_ad_names([ad.name for ad in payload.ads])
+        for ad_input in payload.ads:
+            # Appending is what binds the ad to the campaign. Passing
+            # campaign= to the constructor as well would append it a second
+            # time through back_populates, and the re-read after commit hits
+            # the session's identity map rather than the database - so the
+            # duplicate would survive into the response.
+            campaign.ads.append(apply_ad_input(Ad(), ad_input))
 
         self._campaigns.add(campaign)
         await self._commit(owner_user_id, campaign.name)
 
-        # Re-read rather than mapping the in-memory instance: a collection that
-        # was cleared but never populated is not marked loaded, and touching it
-        # after commit would emit a lazy SELECT outside the async context.
+        # Re-read rather than mapping the in-memory instance: the audience was
+        # set by id and never loaded, and touching it after commit would emit a
+        # lazy SELECT outside the async context.
         return await self.get(campaign.id, owner_user_id)
 
     async def update(
@@ -143,8 +152,8 @@ class CampaignService:
 
         if "description" in supplied:
             campaign.description = payload.description
-        if "audience_type" in supplied and payload.audience_type:
-            campaign.audience_type = payload.audience_type.value
+        if "audience_id" in supplied:
+            campaign.audience_id = await self._resolve_audience(payload.audience_id, owner_user_id)
 
         if payload.schedule is not None:
             campaign.start_at = payload.schedule.start_at
@@ -170,17 +179,6 @@ class CampaignService:
             campaign.utm_content = payload.tracking.utm_content
             campaign.external_ref = payload.tracking.external_ref
 
-        if payload.experience is not None:
-            experience = campaign.experience
-            if experience is None:
-                experience = Experience(campaign=campaign)
-                campaign.experiences.append(experience)
-            self._apply_experience(experience, payload.experience)
-
-        if payload.recipients is not None:
-            self._replace_recipients(campaign, payload.recipients)
-
-        self._enforce_audience_rule(campaign)
         campaign.updated_at = datetime.now(UTC)
 
         await self._commit(owner_user_id, campaign.name)
@@ -209,6 +207,8 @@ class CampaignService:
                     "The campaign cannot be published.",
                     details=[b.as_detail() for b in blockers],
                 )
+
+            self._activate_ready_ads(campaign)
 
             resolved = resolve_publish_target(campaign.start_at)
             campaign.status = resolved.value
@@ -295,7 +295,6 @@ class CampaignService:
     def _apply_scalar_fields(self, campaign: Campaign, payload: CampaignCreate) -> None:
         campaign.description = payload.description
         campaign.objective = payload.objective.value
-        campaign.audience_type = payload.audience_type.value
 
         campaign.start_at = payload.schedule.start_at
         campaign.end_at = payload.schedule.end_at
@@ -327,64 +326,45 @@ class CampaignService:
         return DEFAULT_DISCLAIMERS.get(category)
 
     @staticmethod
-    def _apply_experience(experience: Experience, payload: ExperienceInput) -> None:
-        experience.video_url = payload.video_url
-        experience.poster_url = payload.poster_url
-        experience.captions_url = payload.captions_url
-        experience.video_duration_seconds = payload.video_duration_seconds
-        experience.headline = payload.headline
-        experience.personalised_message = payload.personalised_message
+    def _activate_ready_ads(campaign: Campaign) -> None:
+        """Switch on every ad that is finished and has never been paused.
 
-        # Options are reconciled by position rather than cleared and re-added.
-        # Delete-orphan plus a fresh insert makes SQLAlchemy emit the INSERT
-        # before the DELETE in one flush, which trips uniq_option_position.
-        # Updating in place also keeps each option's analytics key, so
-        # rewording a label does not split its metric into two series.
-        existing = {option.position: option for option in experience.options}
-        incoming = {option.position: option for option in payload.options}
+        Publishing the campaign is the act of going live, so an ad the user
+        finished and left alone goes live with it - otherwise the common path
+        (one campaign, one ad, press Publish) hands every recipient a 403.
 
-        for position, option_input in sorted(incoming.items()):
-            option = existing.get(position)
-            if option is None:
-                option = CampaignOption(position=position, key=option_input.derive_key())
-                experience.options.append(option)
+        A **paused** ad is left paused. That is a decision the user made about
+        that specific creative, and publishing the campaign is not a reason to
+        undo it. Archived ads are likewise never resurrected.
+        """
+        for ad in campaign.ads:
+            if ad.status == AdStatus.DRAFT.value and ad.is_complete:
+                ad.status = AdStatus.ACTIVE.value
 
-            option.label = option_input.label or f"Option {position}"
-            option.intent = option_input.intent.value
-            option.follow_up_type = option_input.follow_up_type.value
-            option.follow_up_message = option_input.follow_up_message
-            option.follow_up_url = option_input.follow_up_url
+    async def _resolve_audience(self, audience_id: str | None, owner_user_id: str) -> str | None:
+        """Check the caller owns the audience they are pointing this campaign at.
 
-        for position, option in existing.items():
-            if position not in incoming:
-                experience.options.remove(option)
+        Without this the foreign key alone would happily accept any id that
+        exists, letting one account attach another account's list to its own
+        campaign and read the names back through the preview. An id that is not
+        theirs is reported as not found, the same as one that does not exist.
+        """
+        if audience_id is None:
+            return None
 
-    @staticmethod
-    def _replace_recipients(campaign: Campaign, recipients: list[RecipientInput]) -> None:
-        campaign.recipients.clear()
-        for recipient in recipients:
-            campaign.recipients.append(
-                Recipient(
-                    customer_name=recipient.customer_name,
-                    email=str(recipient.email) if recipient.email else None,
-                    phone=recipient.phone,
-                    external_ref=recipient.external_ref,
-                    attributes=recipient.attributes,
-                )
-            )
-
-    @staticmethod
-    def _enforce_audience_rule(campaign: Campaign) -> None:
-        if campaign.audience_type == AudienceType.SINGLE.value and len(campaign.recipients) > 1:
+        audience = await self._audiences.get(audience_id, owner_user_id)
+        if audience is None:
             raise ApiError(
-                422,
-                "VALIDATION_ERROR",
-                "A single-recipient campaign cannot have more than one recipient.",
+                404,
+                "AUDIENCE_NOT_FOUND",
+                "No audience with that id.",
                 details=[
                     {
-                        "field": "recipients",
-                        "code": "TOO_MANY",
-                        "message": "Set audience_type to LIST to add more than one recipient.",
+                        "field": "audience_id",
+                        "code": "NOT_FOUND",
+                        "message": "Choose an audience you own.",
                     }
                 ],
             )
+
+        return audience.id

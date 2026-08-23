@@ -1,4 +1,4 @@
-"""View and response recording for the recipient-facing preview.
+"""View and response recording for the viewer-facing preview.
 
 Duplicate protection is layered: a read finds the common case cheaply, and the
 partial unique index catches the concurrent case the read cannot. Either way a
@@ -15,6 +15,8 @@ from sqlalchemy.exc import IntegrityError
 
 from src.app.errors import ApiError
 from src.models import Campaign, CampaignEvent
+from src.models.audience import AudienceMember
+from src.repositories.audience_repository import AudienceRepository
 from src.repositories.campaign_repository import CampaignRepository
 from src.repositories.event_repository import EventRepository
 from src.schemas.enums import CampaignStatus, EventType, FollowUpType
@@ -30,11 +32,13 @@ class EventService:
         self,
         campaigns: CampaignRepository,
         events: EventRepository,
+        audiences: AudienceRepository,
         *,
         ip_hash_salt: str = "",
     ) -> None:
         self._campaigns = campaigns
         self._events = events
+        self._audiences = audiences
         self._salt = ip_hash_salt
 
     async def record_view(
@@ -42,11 +46,13 @@ class EventService:
         campaign_id: str,
         session_id: str,
         *,
-        recipient_id: str | None = None,
+        ad_id: str | None = None,
+        member_id: str | None = None,
         user_agent: str | None = None,
         client_ip: str | None = None,
     ) -> EventRead:
         campaign = await self._require_live(campaign_id)
+        ad = self._resolve_ad(campaign, ad_id)
 
         existing = await self._events.find_by_session(campaign.id, session_id, EventType.VIEW)
         if existing is not None:
@@ -54,8 +60,8 @@ class EventService:
 
         event = CampaignEvent(
             campaign_id=campaign.id,
-            experience_id=campaign.experience.id if campaign.experience else None,
-            recipient_id=recipient_id,
+            ad_id=ad.id if ad else None,
+            member_id=member_id,
             session_id=session_id,
             type=EventType.VIEW.value,
             user_agent=(user_agent or "")[:255] or None,
@@ -70,26 +76,32 @@ class EventService:
         session_id: str,
         option_id: str,
         *,
-        recipient_id: str | None = None,
+        ad_id: str | None = None,
+        member_id: str | None = None,
         user_agent: str | None = None,
         client_ip: str | None = None,
     ) -> ResponseResult:
         campaign = await self._require_live(campaign_id)
-        option = self._require_option(campaign, option_id)
+        ad, option = self._require_option(campaign, option_id)
 
         existing = await self._events.find_by_session(campaign.id, session_id, EventType.RESPONSE)
         if existing is not None:
             # Return the follow-up for the option originally chosen, not the
             # one just clicked, so a double-click cannot switch the outcome.
-            original = self._require_option(campaign, str(existing.option_id))
-            return self._build_result(
-                campaign, original, self._to_read(existing, deduplicated=True)
+            # Personalised for whoever the original event named, for the same
+            # reason: the second click must render exactly like the first.
+            _, original = self._require_option(campaign, str(existing.option_id))
+            return await self._build_result(
+                campaign,
+                original,
+                self._to_read(existing, deduplicated=True),
+                member_id=existing.member_id,
             )
 
         event = CampaignEvent(
             campaign_id=campaign.id,
-            experience_id=campaign.experience.id if campaign.experience else None,
-            recipient_id=recipient_id,
+            ad_id=ad.id,
+            member_id=member_id,
             option_id=option.id,
             session_id=session_id,
             type=EventType.RESPONSE.value,
@@ -98,7 +110,7 @@ class EventService:
         )
 
         recorded = await self._insert(event, campaign.id, session_id, EventType.RESPONSE)
-        return self._build_result(campaign, option, recorded)
+        return await self._build_result(campaign, option, recorded, member_id=member_id)
 
     # --- helpers -----------------------------------------------------------
 
@@ -144,12 +156,52 @@ class EventService:
         return campaign
 
     @staticmethod
+    def _resolve_ad(campaign: Campaign, ad_id: str | None):
+        """Which creative this event happened on.
+
+        Without an id the campaign's primary ad is assumed, which is what the
+        single-ad flow has always done implicitly.
+        """
+        if ad_id is None:
+            return campaign.primary_ad
+
+        for ad in campaign.ads:
+            if ad.id == ad_id:
+                return ad
+
+        raise ApiError(404, "AD_NOT_FOUND", "No ad with that id on this campaign.")
+
+    async def _member(self, campaign: Campaign, member_id: str | None) -> AudienceMember | None:
+        """The person a follow-up is addressed to.
+
+        Resolved exactly as ``PreviewService._select_member`` resolves it,
+        including the fall back to the audience's first member when the link
+        names nobody. The two must agree: they are the two halves of one
+        interaction, and a video that opens "Hi Rahul" followed by "Great,
+        there - an advisor will call" is a bug the recipient sees.
+
+        That fallback is also what makes the brief's single-customer case work
+        - an audience of one, opened from a link that carries no member id.
+        """
+        if campaign.audience_id is None:
+            return None
+
+        if member_id is None:
+            return await self._audiences.first_member(campaign.audience_id)
+
+        return await self._audiences.get_member(campaign.audience_id, member_id)
+
+    @staticmethod
     def _require_option(campaign: Campaign, option_id: str):
-        experience = campaign.experience
-        options = experience.options if experience else []
-        for option in options:
-            if option.id == option_id:
-                return option
+        """Find an option anywhere in the campaign, and the ad that owns it.
+
+        Searching every ad rather than one is what makes ``ad_id`` optional on
+        a response: the option id already identifies its creative unambiguously.
+        """
+        for ad in campaign.ads:
+            for option in ad.options:
+                if option.id == option_id:
+                    return ad, option
 
         raise ApiError(
             422,
@@ -157,11 +209,19 @@ class EventService:
             "That response option does not belong to this campaign.",
         )
 
-    def _build_result(self, campaign: Campaign, option, event: EventRead) -> ResponseResult:
+    async def _build_result(
+        self, campaign: Campaign, option, event: EventRead, *, member_id: str | None
+    ) -> ResponseResult:
+        # Resolved against whoever the link named, and against the same
+        # fallback the preview used when it named nobody.
+        member = await self._member(campaign, member_id)
+
         context = PersonalisationContext(
-            customer_name=(campaign.recipients[0].customer_name if campaign.recipients else None),
+            customer_name=member.full_name if member else None,
             campaign_name=campaign.name,
             option_label=option.label,
+            city=member.city if member else None,
+            country=member.country if member else None,
         )
 
         follow_up_url = option.follow_up_url

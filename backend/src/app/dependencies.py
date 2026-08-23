@@ -16,9 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.errors import ApiError
 from src.core.config import Settings, get_settings
 from src.core.security import DEV_USER_HEADER, ClerkVerifier, CurrentUser, extract_bearer_token
+from src.repositories.audience_repository import AudienceRepository
 from src.repositories.campaign_repository import CampaignRepository
 from src.repositories.event_repository import EventRepository
+from src.services.ad_service import AdService
 from src.services.analytics_service import AnalyticsService
+from src.services.audience_service import AudienceService
 from src.services.campaign_service import CampaignService
 from src.services.event_service import EventService
 from src.services.health_service import HealthService
@@ -70,8 +73,13 @@ def get_event_repository(session: SessionDep) -> EventRepository:
     return EventRepository(session)
 
 
+def get_audience_repository(session: SessionDep) -> AudienceRepository:
+    return AudienceRepository(session)
+
+
 CampaignRepoDep = Annotated[CampaignRepository, Depends(get_campaign_repository)]
 EventRepoDep = Annotated[EventRepository, Depends(get_event_repository)]
+AudienceRepoDep = Annotated[AudienceRepository, Depends(get_audience_repository)]
 
 
 # --- identity --------------------------------------------------------------
@@ -128,18 +136,31 @@ def get_health_service(request: Request, settings: SettingsDep) -> HealthService
     return HealthService(settings=settings, started_at=started_at)
 
 
-def get_campaign_service(campaigns: CampaignRepoDep, events: EventRepoDep) -> CampaignService:
-    return CampaignService(campaigns, events)
+def get_campaign_service(
+    campaigns: CampaignRepoDep, events: EventRepoDep, audiences: AudienceRepoDep
+) -> CampaignService:
+    return CampaignService(campaigns, events, audiences)
+
+
+def get_audience_service(audiences: AudienceRepoDep, settings: SettingsDep) -> AudienceService:
+    return AudienceService(audiences, sample_data=settings.sample_audiences)
+
+
+def get_ad_service(campaigns: CampaignRepoDep, events: EventRepoDep) -> AdService:
+    return AdService(campaigns, events)
 
 
 def get_event_service(
-    campaigns: CampaignRepoDep, events: EventRepoDep, settings: SettingsDep
+    campaigns: CampaignRepoDep,
+    events: EventRepoDep,
+    audiences: AudienceRepoDep,
+    settings: SettingsDep,
 ) -> EventService:
-    return EventService(campaigns, events, ip_hash_salt=settings.ip_hash_salt)
+    return EventService(campaigns, events, audiences, ip_hash_salt=settings.ip_hash_salt)
 
 
-def get_preview_service(campaigns: CampaignRepoDep) -> PreviewService:
-    return PreviewService(campaigns)
+def get_preview_service(campaigns: CampaignRepoDep, audiences: AudienceRepoDep) -> PreviewService:
+    return PreviewService(campaigns, audiences)
 
 
 def get_analytics_service(campaigns: CampaignRepoDep, events: EventRepoDep) -> AnalyticsService:
@@ -161,6 +182,8 @@ def get_video_storage(request: Request, settings: SettingsDep) -> VideoStorage:
 
 HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
 CampaignServiceDep = Annotated[CampaignService, Depends(get_campaign_service)]
+AudienceServiceDep = Annotated[AudienceService, Depends(get_audience_service)]
+AdServiceDep = Annotated[AdService, Depends(get_ad_service)]
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
 PreviewServiceDep = Annotated[PreviewService, Depends(get_preview_service)]
 AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]

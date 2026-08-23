@@ -46,6 +46,33 @@ class EventRepository:
         )
         return {str(row[0]): int(row[1]) for row in result.all()}
 
+    async def counts_by_ad(self, campaign_id: str) -> dict[str, dict[str, int]]:
+        """Per-ad event counts for one campaign: {ad_id: {type: count}}.
+
+        One grouped query for the whole campaign, not one per ad.
+        """
+        result = await self._session.execute(
+            select(
+                CampaignEvent.ad_id,
+                CampaignEvent.type,
+                func.count(CampaignEvent.id),
+            )
+            .where(CampaignEvent.campaign_id == campaign_id, CampaignEvent.ad_id.is_not(None))
+            .group_by(CampaignEvent.ad_id, CampaignEvent.type)
+        )
+
+        counts: dict[str, dict[str, int]] = {}
+        for ad_id, event_type, total in result.all():
+            counts.setdefault(str(ad_id), {})[str(event_type)] = int(total)
+        return counts
+
+    async def counts_for_ad(self, ad_id: str) -> int:
+        """How many events one ad has recorded. Gates deleting it."""
+        total = await self._session.scalar(
+            select(func.count()).select_from(CampaignEvent).where(CampaignEvent.ad_id == ad_id)
+        )
+        return int(total or 0)
+
     async def unique_viewers(self, campaign_id: str) -> int:
         """Distinct sessions that recorded a view.
 

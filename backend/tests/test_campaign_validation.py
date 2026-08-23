@@ -43,7 +43,7 @@ class TestDraftValidation:
             f"{api}/campaigns",
             json={
                 "name": "Insecure",
-                "experience": {"video_url": "http://cdn.example.com/a.mp4"},
+                "ads": [{"name": "Ad 1", "video_url": "http://cdn.example.com/a.mp4"}],
             },
         )
 
@@ -57,7 +57,7 @@ class TestDraftValidation:
             f"{api}/campaigns",
             json={
                 "name": "SSRF",
-                "experience": {"video_url": "https://192.168.0.10/a.mp4"},
+                "ads": [{"name": "Ad 1", "video_url": "https://192.168.0.10/a.mp4"}],
             },
         )
 
@@ -79,9 +79,8 @@ class TestPublishContract:
         assert body["error"]["code"] == "VALIDATION_ERROR"
 
         fields = {d["field"] for d in body["error"]["details"]}
-        assert "experience.video_url" in fields
-        assert "experience.personalised_message" in fields
-        assert "recipients" in fields
+        assert "ads" in fields
+        assert "audience_id" in fields
 
     def test_details_is_always_an_array(self, owner_client: TestClient, api: str) -> None:
         campaign_id = owner_client.post(f"{api}/campaigns", json={"name": "Bare draft"}).json()[
@@ -104,7 +103,7 @@ class TestPublishContract:
         body = owner_client.get(f"{api}/campaigns/{campaign_id}").json()
 
         # The builder can disable Publish without attempting the call.
-        assert "experience.video_url" in body["publish_blockers"]
+        assert "ads" in body["publish_blockers"]
         assert body["effective_status"] == "INCOMPLETE"
 
     def test_financial_category_requires_a_disclaimer(
@@ -135,7 +134,7 @@ class TestLifecycle:
         assert body["badge"] == "Published"
         assert body["effective_status"] == "SCHEDULED"
 
-    def test_a_scheduled_campaign_is_not_open_to_recipients(
+    def test_a_scheduled_campaign_is_not_open_to_viewers(
         self, owner_client: TestClient, api: str, draft_payload: dict
     ) -> None:
         payload = {**draft_payload, "schedule": {"start_at": "2099-01-01T00:00:00Z"}}
@@ -147,7 +146,7 @@ class TestLifecycle:
         assert response.status_code == 403
         assert response.json()["error"]["code"] == "CAMPAIGN_NOT_LIVE"
 
-    def test_a_draft_is_not_open_to_recipients(
+    def test_a_draft_is_not_open_to_viewers(
         self, owner_client: TestClient, api: str, draft_payload: dict
     ) -> None:
         campaign_id = owner_client.post(f"{api}/campaigns", json=draft_payload).json()["id"]
@@ -164,7 +163,7 @@ class TestLifecycle:
         assert response.status_code == 200
         assert response.json()["customer_name"] == "Rahul"
 
-    def test_pause_closes_it_to_recipients(
+    def test_pause_closes_it_to_viewers(
         self, owner_client: TestClient, api: str, published_campaign: dict
     ) -> None:
         campaign_id = published_campaign["id"]
@@ -250,28 +249,26 @@ class TestEditing:
 
         assert updated["description"] == "A note."
         assert updated["name"] == "Investment Opportunity"
-        assert updated["experience"]["video_url"] == "https://cdn.example.com/investment.mp4"
+        assert updated["ads"][0]["video_url"] == "https://cdn.example.com/investment.mp4"
 
     def test_rewording_a_label_keeps_its_analytics_key(
         self, owner_client: TestClient, api: str, draft_payload: dict
     ) -> None:
         campaign_id = owner_client.post(f"{api}/campaigns", json=draft_payload).json()["id"]
-        original_key = owner_client.get(f"{api}/campaigns/{campaign_id}").json()["experience"][
-            "options"
-        ][0]["key"]
+        ad = owner_client.get(f"{api}/campaigns/{campaign_id}").json()["ads"][0]
+        original_key = ad["options"][0]["key"]
 
-        experience = {**draft_payload["experience"]}
-        experience["options"] = [
-            {**experience["options"][0], "label": "Yes, I'm interested"},
-            experience["options"][1],
+        options = [
+            {**draft_payload["ads"][0]["options"][0], "label": "Yes, I'm interested"},
+            draft_payload["ads"][0]["options"][1],
         ]
         updated = owner_client.patch(
-            f"{api}/campaigns/{campaign_id}", json={"experience": experience}
+            f"{api}/campaigns/{campaign_id}/ads/{ad['id']}", json={"options": options}
         ).json()
 
-        assert updated["experience"]["options"][0]["label"] == "Yes, I'm interested"
+        assert updated["options"][0]["label"] == "Yes, I'm interested"
         # The key is stable, so the metric does not split into two series.
-        assert updated["experience"]["options"][0]["key"] == original_key == "tell-me-more"
+        assert updated["options"][0]["key"] == original_key == "tell-me-more"
 
     def test_editing_a_missing_campaign_is_404(self, owner_client: TestClient, api: str) -> None:
         response = owner_client.patch(f"{api}/campaigns/does-not-exist", json={"name": "X"})

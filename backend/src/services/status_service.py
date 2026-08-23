@@ -9,7 +9,10 @@ or COMPLETED when it ends.
 from datetime import UTC, datetime
 
 from src.schemas.enums import (
+    ALLOWED_AD_TRANSITIONS,
     PUBLISHED_STATUSES,
+    AdEffectiveStatus,
+    AdStatus,
     CampaignBadge,
     CampaignStatus,
     EffectiveStatus,
@@ -103,3 +106,47 @@ def is_transition_allowed(current: CampaignStatus, target: CampaignStatus) -> bo
 def is_viewable_by_recipient(effective_status: EffectiveStatus) -> bool:
     """Only a live campaign may be opened by a recipient."""
     return effective_status is EffectiveStatus.ACTIVE
+
+
+# --- ads -------------------------------------------------------------------
+
+
+def derive_ad_effective_status(
+    *,
+    status: AdStatus,
+    is_complete: bool,
+    campaign_effective: EffectiveStatus,
+) -> AdEffectiveStatus:
+    """What one ad is actually doing right now.
+
+    An ad is delivering only when it is switched on, complete, **and** its
+    campaign is live. CAMPAIGN_PAUSED is the case worth naming: the ad is
+    faultless and still shows nothing, because the level above it is not
+    running. Without it a user sees "ACTIVE" on an ad nobody can watch.
+    """
+    if status is AdStatus.ARCHIVED:
+        return AdEffectiveStatus.ARCHIVED
+    if status is AdStatus.DRAFT:
+        return AdEffectiveStatus.DRAFT if is_complete else AdEffectiveStatus.INCOMPLETE
+    if status is AdStatus.PAUSED:
+        return AdEffectiveStatus.PAUSED
+
+    # Switched on. Completeness first: it is the ad's own fault, and the more
+    # actionable of the two reasons it might not be delivering.
+    if not is_complete:
+        return AdEffectiveStatus.INCOMPLETE
+    if campaign_effective is not EffectiveStatus.ACTIVE:
+        return AdEffectiveStatus.CAMPAIGN_PAUSED
+
+    return AdEffectiveStatus.ACTIVE
+
+
+def is_ad_transition_allowed(current: AdStatus, target: AdStatus) -> bool:
+    if current == target:
+        return True
+    return target in ALLOWED_AD_TRANSITIONS.get(current, frozenset())
+
+
+def is_ad_deliverable(effective_status: AdEffectiveStatus) -> bool:
+    """Only a delivering ad may be opened by a recipient."""
+    return effective_status is AdEffectiveStatus.ACTIVE

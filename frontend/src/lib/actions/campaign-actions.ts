@@ -3,6 +3,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 
+import { createAd, updateAd } from "@/lib/api/ads";
 import {
   changeCampaignStatus,
   createCampaign,
@@ -10,8 +11,15 @@ import {
   updateCampaign,
 } from "@/lib/api/campaigns";
 import { isApiError } from "@/lib/api/errors";
+import { prefixAdErrors } from "@/lib/actions/ad-field-errors";
 import type { ActionResult } from "@/types/action";
-import type { Campaign, CampaignStatus, CampaignWritePayload } from "@/types/campaign";
+import type {
+  AdInput,
+  Campaign,
+  CampaignStatus,
+  CampaignUpdatePayload,
+  CampaignWritePayload,
+} from "@/types/campaign";
 
 /**
  * Campaign mutations.
@@ -80,7 +88,7 @@ export async function createCampaignAction(
 
 export async function updateCampaignAction(
   campaignId: string,
-  payload: Partial<CampaignWritePayload>,
+  payload: CampaignUpdatePayload,
 ): Promise<ActionResult<Campaign>> {
   if (!(await requireSession())) return UNAUTHENTICATED;
 
@@ -94,21 +102,37 @@ export async function updateCampaignAction(
 }
 
 /**
- * Saves the draft and then publishes it, so the button acts on what is on
- * screen rather than on whatever was last saved. A publish rejection leaves
- * the save intact - nothing is lost, and the blockers name what to fix.
+ * Saves what the builder has on screen: the campaign, then its first ad.
+ *
+ * Two calls, because they are two resources - the campaign PATCH deliberately
+ * refuses to carry ads. The campaign is saved first so that a rejected ad
+ * still leaves the campaign-level edits persisted, and the ad's field errors
+ * are re-keyed onto `ads.0.*` so the form can mark the fields they belong to.
  */
-export async function saveAndPublishAction(
+export async function saveBuilderAction(
   campaignId: string,
-  payload: Partial<CampaignWritePayload>,
+  campaign: CampaignUpdatePayload,
+  ad: AdInput,
+  adId: string | null,
 ): Promise<ActionResult<Campaign>> {
   if (!(await requireSession())) return UNAUTHENTICATED;
 
   try {
-    await updateCampaign(campaignId, payload);
-    const campaign = await changeCampaignStatus(campaignId, "ACTIVE");
-    revalidateCampaign(campaign.id);
-    return { ok: true, data: campaign };
+    const saved = await updateCampaign(campaignId, campaign);
+
+    try {
+      if (adId) {
+        await updateAd(campaignId, adId, ad);
+      } else {
+        await createAd(campaignId, ad);
+      }
+    } catch (error) {
+      const failure = toFailure(error);
+      return { ...failure, fieldErrors: prefixAdErrors(failure.fieldErrors) };
+    }
+
+    revalidateCampaign(saved.id);
+    return { ok: true, data: saved };
   } catch (error) {
     return toFailure(error);
   }

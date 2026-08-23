@@ -120,7 +120,7 @@ class TestKeysAndUrls:
         url = storage.public_url("a/b.mp4")
         assert url == "https://clippilot-videos.s3.ap-south-1.amazonaws.com/a/b.mp4"
 
-    def test_public_url_passes_the_experience_validator(self, storage: VideoStorage) -> None:
+    def test_public_url_passes_the_ad_validator(self, storage: VideoStorage) -> None:
         """The URL this produces has to survive the field it is saved into."""
         from src.schemas.validators import validate_video_url
 

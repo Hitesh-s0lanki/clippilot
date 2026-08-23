@@ -6,7 +6,7 @@ import { CampaignStatusBadge } from "../../_components/campaign-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { OBJECTIVE_LABELS, formatRecipientCount } from "@/lib/campaign-labels";
+import { OBJECTIVE_LABELS, formatMemberCount } from "@/lib/campaign-labels";
 import { formatDate } from "@/lib/format";
 import type { CampaignSummary } from "@/types/campaign";
 
@@ -60,7 +60,7 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
           <div className="flex items-center gap-1.5">
             <UsersIcon aria-hidden className="size-3.5" />
             <dt className="sr-only">Audience</dt>
-            <dd>{formatRecipientCount(campaign.recipient_count)}</dd>
+            <dd>{formatMemberCount(campaign.audience_size)}</dd>
           </div>
           {metrics.last_activity_at ? (
             <div className="flex items-center gap-1.5">

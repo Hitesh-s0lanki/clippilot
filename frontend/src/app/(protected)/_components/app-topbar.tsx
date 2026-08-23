@@ -12,7 +12,7 @@ import { AppTopbarSection } from "./app-topbar-section";
  */
 export function AppTopbar() {
   return (
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-4 backdrop-blur">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-4 backdrop-blur">
       <SidebarTrigger className="-ml-1.5" />
       <AppTopbarSection />
     </header>

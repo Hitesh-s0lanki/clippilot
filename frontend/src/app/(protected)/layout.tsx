@@ -33,6 +33,14 @@ const SIDEBAR_COOKIE = "sidebar_state";
  * `tooltip` renders a Radix tooltip, which throws outright without a provider
  * above it. It sits at the shell rather than around the rail so any tooltip a
  * console screen adds later is already covered.
+ *
+ * **The shell is the height of the viewport from `md` up**, so the rail and the
+ * topbar stay put and each screen scrolls its own content. That is what lets a
+ * long form pin its actions to the bottom of the screen instead of burying
+ * them under a page that keeps growing. Below `md` it is left to scroll as a
+ * document: a phone's browser chrome resizes the viewport as it hides, and a
+ * virtual keyboard shrinks it further, so a locked `dvh` there costs more than
+ * it buys.
  */
 export default async function ProtectedLayout({ children }: LayoutProps<"/">) {
   await auth.protect();
@@ -42,11 +50,14 @@ export default async function ProtectedLayout({ children }: LayoutProps<"/">) {
 
   return (
     <TooltipProvider>
-      <SidebarProvider defaultOpen={defaultOpen} className="flex-1">
+      <SidebarProvider defaultOpen={defaultOpen} className="flex-1 md:h-dvh md:overflow-hidden">
         <AppSidebar />
-        <SidebarInset className="min-w-0">
+        <SidebarInset className="min-w-0 md:min-h-0">
           <AppTopbar />
-          {children}
+          {/* The one scroll container for every console screen. Without it a
+              bounded shell would clip anything taller than the viewport
+              instead of scrolling it. */}
+          <div className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">{children}</div>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

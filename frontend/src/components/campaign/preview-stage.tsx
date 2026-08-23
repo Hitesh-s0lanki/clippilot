@@ -44,7 +44,7 @@ export function PreviewStage({ preview, mode = "live", followUps = {} }: Preview
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { experience, compliance } = preview;
+  const { ad, compliance } = preview;
 
   async function markViewed() {
     if (mode !== "live" || viewed.current) return;
@@ -54,7 +54,8 @@ export function PreviewStage({ preview, mode = "live", followUps = {} }: Preview
       await recordView({
         campaignId: preview.campaign_id,
         sessionId: getPreviewSessionId(preview.campaign_id),
-        recipientId: preview.recipient_id,
+        adId: ad.id,
+        memberId: preview.member_id,
       });
     } catch {
       // A missed view must not stop the recipient from answering.
@@ -87,7 +88,8 @@ export function PreviewStage({ preview, mode = "live", followUps = {} }: Preview
         campaignId: preview.campaign_id,
         sessionId: getPreviewSessionId(preview.campaign_id),
         optionId: option.id,
-        recipientId: preview.recipient_id,
+        adId: ad.id,
+        memberId: preview.member_id,
       });
 
       setChosen(option);
@@ -106,20 +108,24 @@ export function PreviewStage({ preview, mode = "live", followUps = {} }: Preview
   return (
     <div className="space-y-6">
       <PreviewPlayer
-        videoUrl={experience.video_url}
-        posterUrl={experience.poster_url}
-        captionsUrl={experience.captions_url}
+        videoUrl={ad.video_url}
+        posterUrl={ad.poster_url}
+        captionsUrl={ad.captions_url}
         title={`${preview.campaign_name} video`}
         onPlay={markViewed}
       />
 
-      <PreviewMessage headline={experience.headline} message={experience.personalised_message} />
+      <PreviewMessage
+        headline={ad.headline}
+        description={ad.description}
+        message={ad.personalised_message}
+      />
 
       {followUp && chosen ? (
         <PreviewFollowUp followUp={followUp} chosenLabel={chosen.label} />
       ) : (
         <PreviewOptions
-          options={experience.options}
+          options={ad.options}
           submittingId={submittingId}
           disabled={Boolean(submittingId)}
           onChoose={choose}

@@ -9,7 +9,7 @@
 
 /** One field-level problem inside an error envelope. */
 export interface ApiErrorDetail {
-  /** Dotted path to the offending field, e.g. `experience.options.0.label`. */
+  /** Dotted path to the offending field, e.g. `ads.0.options.0.label`. */
   field?: string | null;
   code?: string | null;
   message: string;

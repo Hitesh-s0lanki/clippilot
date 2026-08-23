@@ -37,7 +37,8 @@ and a functional unique index on `lower(name)`.
 
 ### Migrations
 
-Alembic owns the schema. Tables are auto-created at startup **only** on SQLite.
+Alembic owns the schema. Tables are auto-created at startup only on SQLite, and only
+when the file is **new** — a database Alembic has already stamped is left to Alembic.
 
 ```bash
 uv run alembic upgrade head                          # apply
@@ -49,6 +50,40 @@ uv run alembic downgrade -1                          # roll back one
 > (`lower(name)`) is written by hand with `op.execute`, and
 > `tests/test_migrations.py` fails if any declared index goes missing from the
 > migrations.
+
+**If startup refuses with "this SQLite database is at migration X but the code expects
+Y"**, run `uv run alembic upgrade head`, or delete the file to start from an empty one.
+
+That check exists because `create_all` is not a migration. On a database stamped at an
+older revision it adds the tables that are missing and silently leaves the existing ones
+alone, which produces a hybrid: new tables, empty, beside old tables holding the data, and
+an existing table missing the column the ORM now expects. The first query then fails with
+`no such column: campaigns.audience_id` — a long way from the cause. Refusing to start is
+the cheaper failure.
+
+Repairing a database already in that state means dropping the empty tables `create_all`
+invented, then upgrading, so the migrations can do their renames and carry the data:
+
+```bash
+cp trustvid.db trustvid.db.bak-$(date +%H%M%S)
+sqlite3 trustvid.db 'DROP TABLE ad_options; DROP TABLE campaign_ads;'  # whichever are empty
+uv run alembic upgrade head
+```
+
+### Demo data
+
+```bash
+uv run python -m scripts.seed_audiences  --owner <clerk-user-id>   # 100 people, three lists
+uv run python -m scripts.seed_campaigns  --owner <clerk-user-id>   # 4 campaigns, 6 ads
+```
+
+Both are idempotent — anything the account already has by name is left alone, so running
+them twice does not duplicate. Campaigns need the audiences first.
+
+The seeded campaigns sit at different points of the lifecycle on purpose: two published
+and two draft, one published campaign with a **paused** ad, and one draft ad with **no
+video** so the `INCOMPLETE` state and the publish blockers have something to describe. The
+videos are real CC0 files, so the preview actually plays.
 
 ## Run
 
@@ -84,13 +119,13 @@ give it a **dedicated database**, never a development one.
 ## Data model
 
 The campaign is a **top-level entity** — objective, lifecycle, schedule, budget,
-audience, compliance and tracking — with the video experience nested beneath it.
+audience, compliance and tracking — with one or more **ads** nested beneath it.
 Tables, enums, indexes, validation rules and error codes are specified in
 [`docs/campaign-data-model.md`](../docs/campaign-data-model.md).
 
 ```
-campaigns ──1:N──▶ campaign_experiences ──1:N──▶ campaign_options
-    ├──1:N──▶ campaign_recipients
+campaigns ──1:N──▶ campaign_ads ──1:N──▶ ad_options   (at most 5 ads)
+    ├──N:1──▶ audiences ──1:N──▶ audience_members
     └──1:N──▶ campaign_events
 ```
 
@@ -216,10 +251,19 @@ development.
 | `S3_UPLOAD_EXPIRES_SECONDS` | `900` | Presigned ticket lifetime |
 | `MAX_VIDEO_UPLOAD_BYTES` | `209715200` | 200 MB, enforced by the signed policy |
 | `ALLOWED_VIDEO_CONTENT_TYPES` | `video/mp4,video/webm,video/quicktime` | |
+| `ANTHROPIC_API_KEY` | *(empty)* | Empty disables every `/agents` endpoint |
+| `AGENT_MODEL` | `claude-opus-5` | |
+| `AGENT_EFFORT` | `high` | `low` \| `medium` \| `high` \| `xhigh` \| `max` |
+| `AGENT_MAX_TOKENS` | `16000` | Covers thinking *and* the answer |
+| `AGENT_MAX_STEPS` | `12` | Model turns per run |
+| `AGENT_TIMEOUT_SECONDS` | `240` | Wall clock for a whole run |
+| `FIRECRAWL_API_KEY` | *(empty)* | Empty degrades research; it does not disable agents |
+| `FIRECRAWL_MCP_URL` | `https://mcp.firecrawl.dev/v2/mcp` | Key travels as a bearer token, never in the URL |
+| `FIRECRAWL_MCP_TIMEOUT_SECONDS` | `90` | |
 
 ## Video uploads (AWS S3)
 
-An experience needs a playable `video_url`. A pasted CDN link is still accepted;
+An ad needs a playable `video_url`. A pasted CDN link is still accepted;
 these endpoints add the other half - uploading the file itself.
 
 **The bytes never pass through this API.** The backend signs a short-lived S3
@@ -298,6 +342,43 @@ Note `S3_PUBLIC_BASE_URL` must be **https**: `validate_video_url` rejects
 anything else, so a plain-http CDN produces objects that cannot be saved. That
 also means a local MinIO on `http://localhost:9000` will upload but not save -
 use a real bucket, or a pasted URL, for the end-to-end flow.
+
+## AI agents (LangChain + Firecrawl MCP)
+
+The builder form asks for a name, an objective, an audience type, a budget, a compliance
+category, tracking parameters, a headline, a personalised message and two response options
+with their follow-ups. Most users will not fill that in from nothing.
+
+`POST /api/v1/agents/campaign-strategist/draft` takes a sentence of intent and, when there
+is one, the business's website. It reads that site, finds and reads the competitors, and
+returns a draft shaped exactly like `CampaignCreate` — plus the analysis behind it and a
+per-field confidence, so the user can see what was read and what was guessed.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agents/campaign-strategist/draft \
+  -H 'X-Dev-User-Id: user_dev' -H 'Content-Type: application/json' \
+  -d '{
+        "requirements": "Win back investors who paused their SIP this year.",
+        "website_url": "https://example.com",
+        "market": "India"
+      }'
+```
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /agents` | Catalogue: every agent, its JSON Schemas, and whether the feature is on |
+| `POST /agents/campaign-strategist/draft` | Typed — what the builder calls |
+| `POST /agents/{agent_name}/runs` | Generic — a new agent is callable the moment it registers |
+
+**Two switches, not one.** `ANTHROPIC_API_KEY` empty turns the endpoints off and they
+answer `503 AGENTS_NOT_CONFIGURED`. `FIRECRAWL_API_KEY` empty does *not*: the agent still
+drafts from the user's brief, sets `researched: false`, and the response comes back with
+`meta.degraded: true` and a note saying what was missing. Research improves an answer; it
+is not what makes one possible.
+
+Design notes — why structured output is a terminal tool rather than a second constrained
+call, why a rejected result is repaired instead of raised, and what it takes to add the
+next agent — are in [`docs/agents.md`](../docs/agents.md).
 
 ## Dependencies
 

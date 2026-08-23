@@ -5,11 +5,7 @@ import { CampaignActionsMenu } from "../../../_components/campaign-actions-menu"
 import { CampaignStatusBadge } from "../../../_components/campaign-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  OBJECTIVE_LABELS,
-  SPECIAL_CATEGORY_CHIPS,
-  formatRecipientCount,
-} from "@/lib/campaign-labels";
+import { OBJECTIVE_LABELS, SPECIAL_CATEGORY_CHIPS, formatMemberCount } from "@/lib/campaign-labels";
 import { isLive } from "@/lib/campaign-status";
 import { formatDate } from "@/lib/format";
 import type { Campaign } from "@/types/campaign";
@@ -59,18 +55,15 @@ export function CampaignHeader({ campaign }: CampaignHeaderProps) {
 
           <p className="text-sm text-muted-foreground">
             {OBJECTIVE_LABELS[campaign.objective]} ·{" "}
-            {formatRecipientCount(campaign.audience.recipient_count)} · Created{" "}
-            {formatDate(campaign.created_at, campaign.schedule.timezone)}
+            {campaign.audience
+              ? `${campaign.audience.name} · ${formatMemberCount(campaign.audience.member_count)}`
+              : "No audience selected"}{" "}
+            · Created {formatDate(campaign.created_at, campaign.schedule.timezone)}
           </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {isLive(campaign.effective_status) ? (
-            <CopyPreviewLink
-              campaignId={campaign.id}
-              recipientId={campaign.audience.recipients[0]?.id}
-            />
-          ) : null}
+          {isLive(campaign.effective_status) ? <CopyPreviewLink campaignId={campaign.id} /> : null}
           <CampaignActionsMenu
             campaignId={campaign.id}
             campaignName={campaign.name}

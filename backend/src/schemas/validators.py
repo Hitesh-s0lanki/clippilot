@@ -37,6 +37,52 @@ def require_text(value: str | None, *, field: str) -> str:
     return cleaned
 
 
+# Spellings people type for the same place, folded so a segment breakdown does
+# not split "USA" and "United States" into two buckets. Deliberately short: the
+# goal is to catch what a spreadsheet actually contains, not to be a gazetteer.
+_PLACE_ALIASES: dict[str, str] = {
+    "usa": "United States",
+    "us": "United States",
+    "u.s.": "United States",
+    "u.s.a.": "United States",
+    "united states of america": "United States",
+    "uk": "United Kingdom",
+    "u.k.": "United Kingdom",
+    "great britain": "United Kingdom",
+    "uae": "United Arab Emirates",
+    "bombay": "Mumbai",
+    "bengaluru": "Bangalore",
+    "calcutta": "Kolkata",
+    "madras": "Chennai",
+    "new york city": "New York",
+    "nyc": "New York",
+}
+
+
+def normalise_place(value: str | None) -> str | None:
+    """Fold a city or country name to one spelling.
+
+    Grouping is only as good as the strings it groups. Left alone, one upload
+    saying "delhi" and another saying "Delhi" become two segments of the same
+    city, and the breakdown quietly lies about reach.
+    """
+    cleaned = clean_text(value)
+    if cleaned is None:
+        return None
+
+    folded = _PLACE_ALIASES.get(cleaned.casefold())
+    if folded is not None:
+        return folded
+
+    # Title-case only what was typed in one case throughout. "McKinsey" and
+    # "Rio de Janeiro" are already spelled deliberately; lowering them would be
+    # a downgrade.
+    if cleaned.islower() or cleaned.isupper():
+        return cleaned.title()
+
+    return cleaned
+
+
 def slugify(value: str, *, max_length: int = 60) -> str:
     """Produce a stable, URL-safe analytics key from a label."""
     normalised = unicodedata.normalize("NFKD", value)
