@@ -13,6 +13,8 @@ from typing import Annotated
 from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.agents.prompts import PromptLibrary
+from src.agents.toolkits import AgentToolkit
 from src.app.errors import ApiError
 from src.core.config import Settings, get_settings
 from src.core.security import DEV_USER_HEADER, ClerkVerifier, CurrentUser, extract_bearer_token
@@ -20,6 +22,7 @@ from src.repositories.audience_repository import AudienceRepository
 from src.repositories.campaign_repository import CampaignRepository
 from src.repositories.event_repository import EventRepository
 from src.services.ad_service import AdService
+from src.services.agent_service import AgentService
 from src.services.analytics_service import AnalyticsService
 from src.services.audience_service import AudienceService
 from src.services.campaign_service import CampaignService
@@ -167,6 +170,26 @@ def get_analytics_service(campaigns: CampaignRepoDep, events: EventRepoDep) -> A
     return AnalyticsService(campaigns, events)
 
 
+def get_agent_service(request: Request, settings: SettingsDep) -> AgentService:
+    """Build an AgentService over per-application toolkit and prompt caches.
+
+    Both caches are worth sharing. Discovering an MCP server's tools costs a
+    handshake, and the prompt files are read from disk - doing either per
+    request would add latency to every run for no benefit.
+    """
+    toolkit: AgentToolkit | None = getattr(request.app.state, "agent_toolkit", None)
+    if toolkit is None:
+        toolkit = AgentToolkit(settings)
+        request.app.state.agent_toolkit = toolkit
+
+    prompts: PromptLibrary | None = getattr(request.app.state, "agent_prompts", None)
+    if prompts is None:
+        prompts = PromptLibrary()
+        request.app.state.agent_prompts = prompts
+
+    return AgentService(settings, toolkit=toolkit, prompts=prompts)
+
+
 def get_video_storage(request: Request, settings: SettingsDep) -> VideoStorage:
     """One VideoStorage per application, so the boto3 client is reused.
 
@@ -188,6 +211,7 @@ EventServiceDep = Annotated[EventService, Depends(get_event_service)]
 PreviewServiceDep = Annotated[PreviewService, Depends(get_preview_service)]
 AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
 VideoStorageDep = Annotated[VideoStorage, Depends(get_video_storage)]
+AgentServiceDep = Annotated[AgentService, Depends(get_agent_service)]
 
 
 def client_ip(request: Request) -> str | None:

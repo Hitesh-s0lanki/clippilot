@@ -5,6 +5,12 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The model each provider uses when AGENT_MODEL is left blank.
+DEFAULT_AGENT_MODELS: dict[str, str] = {
+    "anthropic": "claude-opus-5",
+    "openai": "gpt-5.1",
+}
+
 
 class Settings(BaseSettings):
     """Environment-backed settings.
@@ -101,6 +107,55 @@ class Settings(BaseSettings):
     # Content types the uploader accepts, aligned with ALLOWED_VIDEO_SUFFIXES.
     allowed_video_content_types: str = "video/mp4,video/webm,video/quicktime"
 
+    # --- AI agents ----------------------------------------------------------
+    # The campaign builder asks for a lot of fields. An agent drafts them from
+    # a sentence of intent plus the business's own website, so the user edits a
+    # filled form instead of facing an empty one. Leaving ANTHROPIC_API_KEY
+    # blank disables every agent endpoint - the rest of the API is unaffected,
+    # the same way a blank S3_BUCKET disables uploads.
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+
+    # Which provider runs the agents. "auto" picks whichever key is present,
+    # preferring Anthropic when both are - the prompts were written and tuned
+    # against Claude. Naming one explicitly is how you override that.
+    agent_provider: Literal["auto", "anthropic", "openai"] = "auto"
+
+    # Blank means "the provider's default" - see DEFAULT_AGENT_MODELS. Set it
+    # to pin a specific model, and remember it is provider-specific: a Claude
+    # id with AGENT_PROVIDER=openai is a 404 from OpenAI, not a fallback.
+    agent_model: str = ""
+
+    # Depth of reasoning. Both providers take the same first three levels;
+    # `xhigh` and `max` are Anthropic-only and are clamped for OpenAI rather
+    # than sent and rejected.
+    agent_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
+
+    # Thinking tokens are drawn from the same allowance as the answer, so this
+    # ceiling covers both the reasoning and the structured result.
+    agent_max_tokens: int = 16_000
+
+    # How many model turns one run may take. Each turn is either a research
+    # tool call or the final result, so this bounds cost and latency.
+    agent_max_steps: int = 12
+
+    # Wall-clock ceiling for a whole run, research included.
+    agent_timeout_seconds: float = 240.0
+
+    # Ceiling for a single tool call. One page that never responds must cost
+    # this much and not the whole run - without it a slow site holds the loop
+    # until the global timeout and every lookup already done is lost.
+    agent_tool_timeout_seconds: float = 45.0
+
+    # --- Firecrawl (MCP) ----------------------------------------------------
+    # Firecrawl is reached over MCP rather than its REST SDK, so any other MCP
+    # server can be added to AgentToolkit without touching an agent. A blank
+    # key does not disable the agents: they fall back to reasoning from the
+    # user's own brief and say so in the response.
+    firecrawl_api_key: str = ""
+    firecrawl_mcp_url: str = "https://mcp.firecrawl.dev/v2/mcp"
+    firecrawl_mcp_timeout_seconds: float = 90.0
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Split the configured origins into the list CORSMiddleware expects."""
@@ -126,6 +181,43 @@ class Settings(BaseSettings):
             for item in self.allowed_video_content_types.split(",")
             if item.strip()
         ]
+
+    @property
+    def agents_configured(self) -> bool:
+        """Agent endpoints are live only once some model key is present."""
+        return self.agent_provider_resolved is not None
+
+    @property
+    def agent_provider_resolved(self) -> str | None:
+        """The provider that will actually run, or None if none can.
+
+        An explicit choice is honoured only when its key exists; naming a
+        provider you have no key for is a misconfiguration, not a request to
+        silently use the other one and bill you somewhere you did not expect.
+        """
+        if self.agent_provider == "anthropic":
+            return "anthropic" if self.anthropic_api_key else None
+        if self.agent_provider == "openai":
+            return "openai" if self.openai_api_key else None
+
+        if self.anthropic_api_key:
+            return "anthropic"
+        if self.openai_api_key:
+            return "openai"
+        return None
+
+    @property
+    def agent_model_resolved(self) -> str:
+        """The model id to use, falling back to the provider's default."""
+        if self.agent_model:
+            return self.agent_model
+        provider = self.agent_provider_resolved
+        return DEFAULT_AGENT_MODELS.get(provider or "", "")
+
+    @property
+    def firecrawl_configured(self) -> bool:
+        """Web research is available only once Firecrawl can be reached."""
+        return bool(self.firecrawl_api_key and self.firecrawl_mcp_url)
 
     @property
     def s3_prefix(self) -> str:

@@ -231,3 +231,125 @@ def age_group_for(age: int | None) -> AgeGroup:
             return group
 
     return AgeGroup.UNKNOWN
+
+
+# --- AI video generation ----------------------------------------------------
+# The subsystem that fills an ad's video_url with a generated file rather than
+# an uploaded one. See docs/ai-video-pipeline.md.
+
+
+class GenerationStatus(StrEnum):
+    """Lifecycle of one generation job.
+
+    ``EXPIRED`` is deliberately distinct from ``FAILED``: it means no terminal
+    signal arrived inside the SLA window, so the outcome is *unknown*. The two
+    need different retry and refund handling.
+    """
+
+    QUEUED = "QUEUED"
+    SUBMITTED = "SUBMITTED"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
+
+
+class GenerationMode(StrEnum):
+    """Which input envelope the request uses.
+
+    Derived from the assets attached rather than chosen by the user: the
+    references decide the mode, so the two can never disagree.
+    """
+
+    T2VA = "T2VA"
+    FL2VA = "FL2VA"
+    REF2VA = "REF2VA"
+
+
+class GenerationProvider(StrEnum):
+    """Who actually runs the model.
+
+    The same job definition runs on any of them, so a provider outage is a
+    configuration change rather than a code change.
+    """
+
+    MINIMAX_API = "MINIMAX_API"
+    MODAL_H3 = "MODAL_H3"
+    FAL = "FAL"
+
+
+class VideoAspectRatio(StrEnum):
+    """Output framing. The wire value is the ratio itself, not a code name."""
+
+    TWENTYONE_NINE = "21:9"
+    SIXTEEN_NINE = "16:9"
+    FOUR_THREE = "4:3"
+    ONE_ONE = "1:1"
+    THREE_FOUR = "3:4"
+    NINE_SIXTEEN = "9:16"
+
+
+class VideoResolution(StrEnum):
+    """Output resolution. ``K2`` is hosted-API only - open weights cannot do it."""
+
+    P768 = "P768"
+    K2 = "K2"
+
+
+class GenerationAssetKind(StrEnum):
+    """What a reference file is, which decides the limits that apply to it."""
+
+    IMAGE = "IMAGE"
+    VIDEO = "VIDEO"
+    AUDIO = "AUDIO"
+
+
+class GenerationAssetRole(StrEnum):
+    """How the model should use a reference file.
+
+    ``REFERENCE`` and the two keyframe roles are mutually exclusive per job:
+    the vendor API accepts both and silently drops one.
+    """
+
+    REFERENCE = "REFERENCE"
+    FIRST_FRAME = "FIRST_FRAME"
+    LAST_FRAME = "LAST_FRAME"
+
+
+# Model input limits, from docs/minimax-h3-model.md 4.1. They are constants
+# rather than literals in a validator so the API can advertise them on
+# /generations/config and the frontend never hardcodes a second copy.
+MAX_REFERENCE_IMAGES = 9
+MAX_REFERENCE_VIDEOS = 3
+MAX_REFERENCE_AUDIO = 3
+MAX_REFERENCE_FILES = 12
+
+# Per-kind ceilings, matching the vendor's own per-file caps so a file the
+# storage layer accepts is a file the model will accept.
+MAX_REFERENCE_BYTES: dict[GenerationAssetKind, int] = {
+    GenerationAssetKind.IMAGE: 30 * 1024 * 1024,
+    GenerationAssetKind.VIDEO: 50 * 1024 * 1024,
+    GenerationAssetKind.AUDIO: 15 * 1024 * 1024,
+}
+
+# Reference clips: each 2-15s, and 15s total per kind.
+MIN_REFERENCE_CLIP_SECONDS = 2
+MAX_REFERENCE_CLIP_SECONDS = 15
+MAX_REFERENCE_TOTAL_SECONDS = 15
+
+# Output duration. Always sent explicitly: the vendor playground defaults to 8
+# and the API to 5, a 60% swing in the bill for a parameter left alone.
+MIN_CLIP_SECONDS = 4
+MAX_CLIP_SECONDS = 15
+DEFAULT_CLIP_SECONDS = 6
+
+# Statuses from which no further transition is allowed.
+TERMINAL_GENERATION_STATUSES = frozenset(
+    {
+        GenerationStatus.SUCCEEDED,
+        GenerationStatus.FAILED,
+        GenerationStatus.CANCELLED,
+        GenerationStatus.EXPIRED,
+    }
+)
