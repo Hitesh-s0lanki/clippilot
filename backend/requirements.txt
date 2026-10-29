@@ -139,7 +139,7 @@ pydantic-settings==2.15.0
     # via
     #   mcp
     #   trustvid-backend
-pyjwt==2.13.0
+pyjwt==2.15.0
     # via
     #   mcp
     #   trustvid-backend
